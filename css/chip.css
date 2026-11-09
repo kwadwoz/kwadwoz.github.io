@@ -38,7 +38,7 @@
   transition: opacity 0.5s;
   white-space: nowrap;
 }
-#chip-hint.hidden { opacity: 0; }
+#chip-hint.hidden { opacity: 0; animation: none; }
 @keyframes hintBlink {
   0%, 100% { opacity: 0.6; }
   50%       { opacity: 1; }

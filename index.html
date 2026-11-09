@@ -55,7 +55,7 @@ I am also member of my school <a
 <div id="chip-3d" style="position:relative">
   <div id="chip-hint">&#9654; HOVER A QUADRANT TO EXPLORE MY PROJECTS &#9664;</div>
 </div>
-<p class="chip-label">ZB-7700-A &nbsp;|&nbsp; hover to explore &nbsp;&middot;&nbsp; click a quadrant to open the project</p>
+<p class="chip-label">ZB-7700-A &nbsp;|&nbsp; hover to explore &nbsp;&middot;&nbsp; click to detach a block &nbsp;&middot;&nbsp; click it again to open</p>
 <div id="chip-info"></div>
 
 <p class="section-title">Updates</p>
@@ -266,120 +266,374 @@ I am also member of my school <a
   var maskMat = new THREE.MeshPhongMaterial({ color: 0x0b2a22, specular: 0x244a3e, shininess: 60 });
   var topMat  = new THREE.MeshPhongMaterial({ map: subTex, specular: 0x59705f, shininess: 80 });
   var backMat = new THREE.MeshPhongMaterial({ color: 0x0a241d, specular: 0x1c3a30, shininess: 40 });
-  var board = new THREE.Mesh(new THREE.BoxGeometry(W, TH, D),
-    [maskMat, maskMat, topMat, backMat, maskMat, maskMat]);
-  chipGroup.add(board);
+
+  /* ---------- laminate cross-section, exposed where a quadrant breaks off ---------- */
+  var secCanvas = document.createElement('canvas');
+  secCanvas.width = 512; secCanvas.height = 64;
+  (function () {
+    var x = secCanvas.getContext('2d'), y = 0;
+    /* top to bottom: solder mask, copper, prepreg, plane, BT core, plane, prepreg, copper, mask */
+    [[5, '#0d3b2f'], [3, '#c8743a'], [8, '#8f8a4e'], [3, '#d08345'], [16, '#6e6236'],
+     [3, '#d08345'], [8, '#8f8a4e'], [3, '#c8743a'], [15, '#0b2a22']].forEach(function (l) {
+      x.fillStyle = l[1]; x.fillRect(0, y, 512, l[0]); y += l[0];
+    });
+    /* glass-fibre weave */
+    for (var i = 0; i < 1400; i++) {
+      x.fillStyle = 'rgba(235,228,190,' + (Math.random() * 0.25) + ')';
+      x.fillRect(Math.random() * 512, Math.random() * 64, 3, 1);
+    }
+    /* plated through-vias */
+    for (var vx = 18; vx < 500; vx += 36 + Math.random() * 30) {
+      x.fillStyle = '#e0a15c'; x.fillRect(vx, 5, 4, 50);
+      x.fillStyle = '#3a2614'; x.fillRect(vx + 1, 8, 2, 44);
+    }
+    /* torn fibres along the break */
+    x.fillStyle = 'rgba(255,240,210,0.2)';
+    for (var k = 0; k < 220; k++) x.fillRect(Math.random() * 512, Math.random() * 64, 1, 1 + Math.random() * 3);
+  })();
+  var secTex = new THREE.CanvasTexture(secCanvas);
+  secTex.wrapS = THREE.RepeatWrapping; secTex.repeat.set(3, 1);
+  var secMat = new THREE.MeshPhongMaterial({ map: secTex, specular: 0x6b5a3a, shininess: 30 });
+
+  /* ---------- four quadrant slabs, each free to break away ---------- */
+  var HW = W / 2, HD = D / 2, GAP = 0.003;
+  var quads = [], slabs = [];
+  for (var qi = 0; qi < 4; qi++) {
+    var sx = (qi & 1) ? 1 : -1, sz = (qi & 2) ? -1 : 1;
+    var hx = sx * HW / 2, hz = sz * HD / 2;
+    var geo = new THREE.BoxGeometry(HW - GAP, TH, HD - GAP);
+    /* top face samples this quadrant's slice of the substrate texture */
+    var pos = geo.attributes.position, nrm = geo.attributes.normal, uv = geo.attributes.uv;
+    for (var vi = 0; vi < pos.count; vi++) {
+      if (nrm.getY(vi) > 0.5)
+        uv.setXY(vi, (pos.getX(vi) + hx + W / 2) / W, (D / 2 - (pos.getZ(vi) + hz)) / D);
+    }
+    /* faces toward the centre are fracture faces: [px, nx, py, ny, pz, nz] */
+    var slab = new THREE.Mesh(geo, [sx < 0 ? secMat : maskMat, sx > 0 ? secMat : maskMat,
+      topMat, backMat, sz < 0 ? secMat : maskMat, sz > 0 ? secMat : maskMat]);
+    slab.userData.idx = qi;
+    var group = new THREE.Group();
+    group.position.set(hx, 0, hz);
+    group.add(slab);
+    chipGroup.add(group);
+    slabs.push(slab);
+    quads.push({ idx: qi, group: group, home: new THREE.Vector3(hx, 0, hz), sx: sx, sz: sz,
+                 dir: new THREE.Vector3(sx, 0, sz).normalize(),
+                 amt: 0, from: 0, to: 0, t0: 0, burst: true, pads: [] });
+  }
+  function quadOf(x, z) { return (x >= 0 ? 1 : 0) + (z < 0 ? 2 : 0); }
+  function attach(mesh, x, y, z) {
+    var q = quads[quadOf(x, z)];
+    mesh.position.set(x - q.home.x, y, z - q.home.z);
+    q.group.add(mesh);
+  }
 
   /* keying notches */
   var notchMat = new THREE.MeshPhongMaterial({ color: 0x061a15, specular: 0x102822, shininess: 20 });
   [-1, 1].forEach(function (sx) {
     [-0.42, 0.42].forEach(function (oz) {
-      var n = new THREE.Mesh(new THREE.BoxGeometry(0.10, TH + 0.02, 0.30), notchMat);
-      n.position.set(sx * (W / 2 - 0.045), 0, oz * D);
-      chipGroup.add(n);
+      attach(new THREE.Mesh(new THREE.BoxGeometry(0.10, TH + 0.02, 0.30), notchMat),
+        sx * (W / 2 - 0.045), 0, oz * D);
     });
   });
 
-  /* ---------- gold pad array ---------- */
+  /* ---------- gold pad array, one instanced mesh per quadrant ---------- */
   var COLS = 34, ROWS = 28, INSET = 0.30;
   var stepX = (W - INSET * 2) / (COLS - 1), stepZ = (D - INSET * 2) / (ROWS - 1);
   var VOID_X = 0.48, VOID_Z = 0.42;
 
-  var padPos = [], padQuad = [];
+  var nPad = 0;
   for (var c = 0; c < COLS; c++) {
     for (var r = 0; r < ROWS; r++) {
       var pxx = -W / 2 + INSET + c * stepX, pzz = -D / 2 + INSET + r * stepZ;
       if (Math.abs(pxx) < VOID_X && Math.abs(pzz) < VOID_Z) continue;
-      padPos.push([pxx, pzz]);
-      padQuad.push((pxx >= 0 ? 1 : 0) + (pzz < 0 ? 2 : 0));
+      quads[quadOf(pxx, pzz)].pads.push([pxx, pzz, nPad++]);
     }
   }
 
   var padMat = new THREE.MeshPhongMaterial({
     color: 0xffffff, specular: 0xfff3d0, shininess: 190, emissive: 0x1a1204 });
-  var pads = new THREE.InstancedMesh(
-    new THREE.CylinderGeometry(0.030, 0.032, 0.022, 12), padMat, padPos.length);
+  var padGeo = new THREE.CylinderGeometry(0.030, 0.032, 0.022, 12);
   var GOLD = new THREE.Color(0xd9b869), GOLD_DIM = new THREE.Color(0xa8894a),
       LIT = new THREE.Color(0xffe9a8);
   var dummy = new THREE.Object3D();
-  padPos.forEach(function (p, k) {
-    dummy.position.set(p[0], TOP + 0.010, p[1]);
-    dummy.updateMatrix();
-    pads.setMatrixAt(k, dummy.matrix);
-    pads.setColorAt(k, GOLD.clone().lerp(GOLD_DIM, ((k * 37) % 100) / 220));
+  function padBase(k) { return GOLD.clone().lerp(GOLD_DIM, ((k * 37) % 100) / 220); }
+  quads.forEach(function (q) {
+    q.padMesh = new THREE.InstancedMesh(padGeo, padMat, q.pads.length);
+    q.pads.forEach(function (p, k) {
+      dummy.position.set(p[0] - q.home.x, TOP + 0.010, p[1] - q.home.z);
+      dummy.updateMatrix();
+      q.padMesh.setMatrixAt(k, dummy.matrix);
+      q.padMesh.setColorAt(k, padBase(p[2]));
+    });
+    q.group.add(q.padMesh);
   });
-  pads.instanceMatrix.needsUpdate = true;
-  chipGroup.add(pads);
 
   function paintPads(hot) {
-    padPos.forEach(function (p, k) {
-      var base = GOLD.clone().lerp(GOLD_DIM, ((k * 37) % 100) / 220);
-      pads.setColorAt(k, padQuad[k] === hot ? LIT : base);
+    quads.forEach(function (q) {
+      q.pads.forEach(function (p, k) {
+        q.padMesh.setColorAt(k, q.idx === hot ? LIT : padBase(p[2]));
+      });
+      q.padMesh.instanceColor.needsUpdate = true;
     });
-    pads.instanceColor.needsUpdate = true;
   }
 
-  /* ---------- centre capacitors ---------- */
+  /* ---------- centre capacitors (none straddle a seam) ---------- */
   var capMat = new THREE.MeshPhongMaterial({ color: 0x14161a, specular: 0x4a4f57, shininess: 90 });
   var capEnd = new THREE.MeshPhongMaterial({ color: 0xb9bec6, specular: 0xffffff, shininess: 160 });
   for (var cx = -3; cx <= 3; cx++) {
     for (var cz = -2; cz <= 2; cz++) {
-      if ((cx + cz) % 2 !== 0) continue;
-      var cap = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.030, 0.045),
-        [capEnd, capEnd, capMat, capMat, capMat, capMat]);
-      cap.position.set(cx * 0.108, TOP + 0.015, cz * 0.118);
-      chipGroup.add(cap);
+      if ((cx + cz) % 2 !== 0 || cx === 0 || cz === 0) continue;
+      attach(new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.030, 0.045),
+        [capEnd, capEnd, capMat, capMat, capMat, capMat]), cx * 0.108, TOP + 0.015, cz * 0.118);
     }
   }
 
   var padGlow = new THREE.PointLight(0xffd98a, 0.45, 3.2);
   padGlow.position.set(0, 0.7, 0); chipGroup.add(padGlow);
 
-  /* ---------- hover explores, click opens ---------- */
-  var raycaster = new THREE.Raycaster(), ptr = new THREE.Vector2(-99, -99);
-  var active = -1, mouseIn = false;
+  /* ---------- fracture effects: laminate shards, copper sparks, snapping traces ---------- */
+  var calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3(), tmpO = new THREE.Object3D();
 
-  function pick() {
+  var MAXD = 160, nextBit = 0, bits = [];
+  var shards = new THREE.InstancedMesh(new THREE.TetrahedronGeometry(1, 0),
+    new THREE.MeshPhongMaterial({ color: 0xffffff, specular: 0x886644, shininess: 50, flatShading: true }), MAXD);
+  shards.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  shards.frustumCulled = false;
+  var SHARD_COLS = [0x6e6236, 0x8f8a4e, 0xc8743a, 0xd08345, 0x0d3b2f, 0x0b2a22, 0xd9b869, 0xe6dfc0];
+  tmpO.scale.set(0, 0, 0); tmpO.updateMatrix();
+  for (var b = 0; b < MAXD; b++) {
+    bits.push({ life: 0, p: new THREE.Vector3(), v: new THREE.Vector3(),
+                r: new THREE.Euler(), w: new THREE.Vector3(), s: new THREE.Vector3() });
+    shards.setMatrixAt(b, tmpO.matrix);
+    shards.setColorAt(b, new THREE.Color(SHARD_COLS[b % SHARD_COLS.length]));
+  }
+  scene.add(shards);
+
+  var MAXS = 220, nextSpark = 0, sparks = [];
+  var sparkPos = new Float32Array(MAXS * 3), sparkCol = new Float32Array(MAXS * 3);
+  var sparkGeo = new THREE.BufferGeometry();
+  sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPos, 3));
+  sparkGeo.setAttribute('color', new THREE.BufferAttribute(sparkCol, 3));
+  var sparkPts = new THREE.Points(sparkGeo, new THREE.PointsMaterial({ size: 0.035, vertexColors: true,
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+  sparkPts.frustumCulled = false;
+  for (var sp = 0; sp < MAXS; sp++) sparks.push({ life: 0, max: 1, p: new THREE.Vector3(), v: new THREE.Vector3() });
+  scene.add(sparkPts);
+
+  var MAXT = 8, strands = [];
+  var strandPos = new Float32Array(MAXT * 6);
+  var strandGeo = new THREE.BufferGeometry();
+  strandGeo.setAttribute('position', new THREE.BufferAttribute(strandPos, 3));
+  var strandLines = new THREE.LineSegments(strandGeo, new THREE.LineBasicMaterial({ color: 0xe0904a }));
+  strandLines.frustumCulled = false;
+  for (var st = 0; st < MAXT; st++) strands.push({ alive: false, q: null, a: new THREE.Vector3(), b: new THREE.Vector3(), max: 0 });
+  scene.add(strandLines);
+
+  /* random point on a quadrant's broken edges, in board coordinates */
+  function seamPoint(q, out, side) {
+    var y = (Math.random() - 0.5) * TH;
+    if (side === undefined) side = Math.random() < HD / (HW + HD) ? 0 : 1;
+    return side === 0 ? out.set(q.sx * 0.002, y, q.sz * Math.random() * HD)
+                      : out.set(q.sx * Math.random() * HW, y, q.sz * 0.002);
+  }
+  function toWorldDir(v) { return v.applyQuaternion(chipGroup.quaternion); }
+
+  function emitShards(q, n, speed) {
+    for (var i = 0; i < n; i++) {
+      var s = bits[nextBit]; nextBit = (nextBit + 1) % MAXD;
+      chipGroup.localToWorld(seamPoint(q, s.p));
+      toWorldDir(s.v.set(q.sx * Math.random() * 0.7 + (Math.random() - 0.5) * 0.5,
+        0.3 + Math.random() * 1.2, q.sz * Math.random() * 0.7 + (Math.random() - 0.5) * 0.5))
+        .multiplyScalar(speed);
+      s.r.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+      s.w.set((Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18);
+      var size = 0.012 + Math.pow(Math.random(), 2) * 0.04;
+      s.s.set(size * (0.6 + Math.random()), size * (0.3 + Math.random() * 0.5), size * (0.6 + Math.random()));
+      s.life = 1.0 + Math.random() * 0.9;
+    }
+  }
+  function emitSparks(at, n, speed) {
+    for (var i = 0; i < n; i++) {
+      var s = sparks[nextSpark]; nextSpark = (nextSpark + 1) % MAXS;
+      s.p.copy(at);
+      s.v.set(Math.random() - 0.5, Math.random() - 0.3, Math.random() - 0.5).normalize()
+        .multiplyScalar(speed * (0.4 + Math.random()));
+      s.max = s.life = 0.25 + Math.random() * 0.45;
+    }
+  }
+  function spawnStrands(q) {
+    var n = 0;
+    strands.forEach(function (s) {
+      if (s.alive || n >= 6) return;
+      var side = n % 2;
+      seamPoint(q, tmpA, side);
+      /* body end sits just across the seam; quadrant end rides on the slab */
+      s.a.copy(tmpA);
+      if (side === 0) s.a.x = -s.a.x; else s.a.z = -s.a.z;
+      s.b.copy(tmpA).sub(q.home);
+      s.q = q; s.max = 0.06 + Math.random() * 0.32; s.alive = true; n++;
+    });
+  }
+
+  function updateFx(dt) {
+    var i, s, k;
+    for (i = 0; i < MAXD; i++) {
+      s = bits[i];
+      if (s.life <= 0) continue;
+      s.life -= dt;
+      if (s.life <= 0) { tmpO.scale.set(0, 0, 0); }
+      else {
+        s.v.y -= 2.8 * dt;
+        s.v.multiplyScalar(1 - 0.8 * dt);
+        s.p.addScaledVector(s.v, dt);
+        s.r.x += s.w.x * dt; s.r.y += s.w.y * dt; s.r.z += s.w.z * dt;
+        k = Math.min(1, s.life / 0.4);
+        tmpO.scale.set(s.s.x * k, s.s.y * k, s.s.z * k);
+      }
+      tmpO.position.copy(s.p); tmpO.rotation.copy(s.r); tmpO.updateMatrix();
+      shards.setMatrixAt(i, tmpO.matrix);
+    }
+    shards.instanceMatrix.needsUpdate = true;
+
+    for (i = 0; i < MAXS; i++) {
+      s = sparks[i];
+      if (s.life > 0) {
+        s.life -= dt;
+        s.v.y -= 3.5 * dt;
+        s.p.addScaledVector(s.v, dt);
+      }
+      k = Math.max(0, s.life / s.max);
+      sparkPos[i * 3] = s.p.x; sparkPos[i * 3 + 1] = s.p.y; sparkPos[i * 3 + 2] = s.p.z;
+      sparkCol[i * 3] = 1.0 * k; sparkCol[i * 3 + 1] = 0.72 * k * k; sparkCol[i * 3 + 2] = 0.3 * k * k * k;
+    }
+    sparkGeo.attributes.position.needsUpdate = true;
+    sparkGeo.attributes.color.needsUpdate = true;
+
+    for (i = 0; i < MAXT; i++) {
+      s = strands[i];
+      if (s.alive) {
+        chipGroup.localToWorld(tmpA.copy(s.a));
+        s.q.group.localToWorld(tmpB.copy(s.b));
+        if (tmpA.distanceTo(tmpB) > s.max) {
+          s.alive = false;
+          emitSparks(tmpA.lerp(tmpB, 0.5), 7, 1.1);
+        }
+      }
+      if (!s.alive) tmpB.copy(tmpA.set(0, 0, 0));
+      strandPos.set([tmpA.x, tmpA.y, tmpA.z, tmpB.x, tmpB.y, tmpB.z], i * 6);
+    }
+    strandGeo.attributes.position.needsUpdate = true;
+  }
+
+  /* ---------- detach / reattach timeline ---------- */
+  var CRACK = calm ? 0 : 0.16, OUT_DUR = calm ? 0.35 : 0.95, BACK_DUR = calm ? 0.25 : 0.6;
+  function easeOutBack(x) { var c = 1.25; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); }
+  function easeInOut(x) { return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }
+
+  var now = 0;
+  function detach(q) {
+    q.from = q.amt; q.to = 1; q.t0 = now;
+    q.crack = q.amt < 0.05 ? CRACK : 0;
+    q.burst = false;
+    if (!calm && q.crack) emitSparks(chipGroup.localToWorld(seamPoint(q, tmpA)), 6, 0.6);
+  }
+  function reattach(q) { q.from = q.amt; q.to = 0; q.t0 = now; }
+
+  function poseQuad(q, t) {
+    var e = now - q.t0, a, shake = 0;
+    if (q.to === 1) {
+      if (e < q.crack) { a = q.from; shake = 0.006 * (e / q.crack); }
+      else {
+        if (!q.burst) {
+          q.burst = true;
+          if (!calm) { chipGroup.updateMatrixWorld(true); emitShards(q, 110, 1.1); spawnStrands(q); }
+        }
+        a = q.from + (1 - q.from) * easeOutBack(Math.min(1, (e - q.crack) / OUT_DUR));
+      }
+    } else {
+      var p = Math.min(1, e / BACK_DUR);
+      a = q.from * (1 - easeInOut(p));
+      if (p >= 1 && q.amt > 0 && !calm) {
+        chipGroup.updateMatrixWorld(true);
+        emitShards(q, 10, 0.35);
+        emitSparks(chipGroup.localToWorld(seamPoint(q, tmpA)), 8, 0.5);
+      }
+    }
+    q.amt = a;
+    var bob = Math.sin(t * 1.7 + q.idx) * 0.025 * Math.min(1, a);
+    q.group.position.set(
+      q.home.x + q.dir.x * 0.27 * a + (Math.random() - 0.5) * shake,
+      0.6 * a + bob + (Math.random() - 0.5) * shake,
+      q.home.z + q.dir.z * 0.27 * a + (Math.random() - 0.5) * shake);
+    /* peel so the broken faces turn toward the viewer */
+    q.group.rotation.set(q.sz * 0.36 * a, 0.10 * a * q.sx * q.sz, -q.sx * 0.36 * a);
+  }
+
+  /* ---------- hover explores, first click detaches, second click opens ---------- */
+  var raycaster = new THREE.Raycaster(), ptr = new THREE.Vector2(-99, -99);
+  var hovered = -1, detached = -1, shown = -2, mouseIn = false, hideTimer = null;
+
+  function pickAt(clientX, clientY) {
+    var rect = container.getBoundingClientRect();
+    ptr.x = (clientX - rect.left) / rect.width * 2 - 1;
+    ptr.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(ptr, camera);
-    var hits = raycaster.intersectObject(board);
-    if (!hits.length) return -1;
-    var lp = board.worldToLocal(hits[0].point.clone());
-    if (lp.y < TOP - 0.001) return -1;
-    return (lp.x >= 0 ? 1 : 0) + (lp.z < 0 ? 2 : 0);
+    var hits = raycaster.intersectObjects(slabs, false);
+    return hits.length ? hits[0].object.userData.idx : -1;
   }
 
   function showZone(idx) {
     var z = zones[idx];
+    clearTimeout(hideTimer);
     drawSub(idx); paintPads(idx);
     container.classList.add('explored');
     if (hint) hint.classList.add('hidden');
     infoPanel.innerHTML = '<div class="bi-name">' + z.name + '</div><hr class="bi-hr">' +
       '<p class="bi-desc">' + z.desc + '</p>' +
       '<a class="bi-link" href="' + z.link + '">' + z.linkLabel + '</a><br>' +
-      '<span class="bi-hint">[ click the quadrant to open ]</span>';
+      '<span class="bi-hint">[ ' + (idx === detached ? 'click the detached block again to open'
+                                                      : 'click the quadrant to detach it') + ' ]</span>';
     infoPanel.style.display = 'block';
     requestAnimationFrame(function () { infoPanel.style.opacity = '1'; });
   }
   function clearZone() {
     infoPanel.style.opacity = '0';
-    setTimeout(function () { infoPanel.style.display = 'none'; }, 250);
+    hideTimer = setTimeout(function () { infoPanel.style.display = 'none'; }, 250);
     drawSub(-1); paintPads(-1);
     container.classList.remove('explored');
     if (hint) hint.classList.remove('hidden');
   }
+  function refresh(force) {
+    var s = hovered >= 0 ? hovered : detached;
+    if (s === shown && !force) return;
+    shown = s;
+    if (s >= 0) showZone(s); else clearZone();
+  }
+  function openZone(idx) {
+    var l = zones[idx].link;
+    if (l.indexOf('http') === 0) window.open(l, '_blank'); else window.location.href = l;
+  }
 
   renderer.domElement.addEventListener('mousemove', function (e) {
-    var rect = container.getBoundingClientRect();
-    ptr.x = (e.clientX - rect.left) / rect.width * 2 - 1;
-    ptr.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    var s = pick();
-    if (s !== active) { active = s; if (s >= 0) showZone(s); else clearZone(); }
+    var s = pickAt(e.clientX, e.clientY);
+    if (s !== hovered) { hovered = s; refresh(); }
     renderer.domElement.style.cursor = s >= 0 ? 'pointer' : 'crosshair';
   });
-  renderer.domElement.addEventListener('click', function () {
-    if (active < 0) return;
-    var l = zones[active].link;
-    if (l.indexOf('http') === 0) window.open(l, '_blank'); else window.location.href = l;
+  renderer.domElement.addEventListener('click', function (e) {
+    var s = pickAt(e.clientX, e.clientY);
+    if (s >= 0 && s === detached) {
+      if (quads[s].amt > 0.5) openZone(s);
+      return;
+    }
+    if (detached >= 0) reattach(quads[detached]);
+    detached = s;
+    if (s >= 0) detach(quads[s]);
+    refresh(true);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && detached >= 0) { reattach(quads[detached]); detached = -1; refresh(true); }
   });
 
   var BASE_TILT = 1.30;
@@ -393,12 +647,14 @@ I am also member of my school <a
   container.addEventListener('mouseleave', function () {
     mouseIn = false; ptr.set(-99, -99);
     tiltX = BASE_TILT; tiltY = 0;
-    if (active !== -1) { active = -1; clearZone(); }
+    if (hovered !== -1) { hovered = -1; refresh(); }
   });
 
-  var t = 0;
+  var t = 0, clock = new THREE.Clock();
   function animate() {
-    requestAnimationFrame(animate); t += 0.016;
+    requestAnimationFrame(animate);
+    var dt = Math.min(clock.getDelta(), 0.05);
+    t += 0.016; now += dt;
     if (!mouseIn) {
       tiltY = Math.sin(t * 0.30) * 0.20;
       tiltX = BASE_TILT + Math.sin(t * 0.20) * 0.06;
@@ -406,6 +662,9 @@ I am also member of my school <a
     curX += (tiltX - curX) * 0.06; curY += (tiltY - curY) * 0.06;
     chipGroup.rotation.x = curX; chipGroup.rotation.y = curY;
     chipGroup.position.y = Math.sin(t * 0.8) * 0.05;
+    quads.forEach(function (q) { poseQuad(q, t); });
+    chipGroup.updateMatrixWorld(true);
+    updateFx(dt);
     padGlow.intensity = 0.38 + Math.sin(t * 2.0) * 0.14;
     rimLight.intensity = 1.4 + Math.sin(t * 1.2) * 0.35;
     sheen.position.x = Math.sin(t * 0.5) * 2.4;
