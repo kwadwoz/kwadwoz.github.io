@@ -426,9 +426,6 @@ footer .copyright a, footer .theme-by a { color: rgba(0, 255, 65, 0.55); }
   opacity: 1;
   filter: invert(1) hue-rotate(180deg) brightness(1.55) contrast(1.2);
 }
-/* full-colour logos skip the invert filter */
-.entry-logo img.logo-color,
-.entry:hover .entry-logo img.logo-color { filter: none; mix-blend-mode: normal; }
 
 .entry-body { min-width: 0; padding-top: 2px; }
 .entry-head {
