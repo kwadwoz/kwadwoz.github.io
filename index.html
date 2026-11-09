@@ -53,9 +53,9 @@ I am also member of my school <a
 <p class="section-title">Projects</p>
 
 <div id="chip-3d" style="position:relative">
-  <div id="chip-hint">&#9654; HOVER A QUADRANT TO EXPLORE MY PROJECTS &#9664;</div>
+  <div id="chip-hint">&#9654; HOVER A DIE TO EXPLORE MY PROJECTS &#9664;</div>
 </div>
-<p class="chip-label">ZB-7700-A &nbsp;|&nbsp; hover to explore &nbsp;&middot;&nbsp; click to detach a block &nbsp;&middot;&nbsp; click it again to open</p>
+<p class="chip-label">ZB-7700-A &nbsp;|&nbsp; hover a die &nbsp;&middot;&nbsp; click to lift it out &nbsp;&middot;&nbsp; click it again to open</p>
 <div id="chip-info"></div>
 
 <p class="section-title">Updates</p>
@@ -166,7 +166,7 @@ I am also member of my school <a
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 /* ═══════════════════════════════════════════════
-   LGA PACKAGE: four quadrants, one per project
+   ACCELERATOR MODULE: four dies, one per project
 ═══════════════════════════════════════════════ */
 (function () {
   'use strict';
@@ -175,7 +175,7 @@ I am also member of my school <a
   var hint      = document.getElementById('chip-hint');
   if (!container || typeof THREE === 'undefined') return;
 
-  /* quadrant index = (x >= 0 ? 1 : 0) + (z < 0 ? 2 : 0) */
+  /* die index = (x >= 0 ? 1 : 0) + (z < 0 ? 2 : 0) */
   var zones = [
     { name: 'ECP5-ETHERNET-SOC', tag: 'HARDWARE',
       desc: 'A UDP/TCP echo SoC on the Lattice ECP5, built from Amaranth HDL, LiteX, and bare-metal VexRiscv firmware. The prototype node for a 10-node cloud FPGA cluster.',
@@ -202,411 +202,392 @@ I am also member of my school <a
   camera.position.set(0, 0.5, 6.8);
   camera.lookAt(0, 0, 0);
 
-  scene.add(new THREE.AmbientLight(0x24303a, 0.7));
-  var keyLight = new THREE.DirectionalLight(0xfff4e0, 1.5);
+  scene.add(new THREE.AmbientLight(0x40454c, 0.9));
+  var keyLight = new THREE.DirectionalLight(0xffffff, 1.0);
   keyLight.position.set(2.6, 5.4, 3.6); scene.add(keyLight);
-  var sheen = new THREE.PointLight(0xffffff, 1.5, 12);
+  var sheen = new THREE.PointLight(0xffffff, 0.7, 12);
   sheen.position.set(-1.8, 3.2, 2.6); scene.add(sheen);
-  var rimLight = new THREE.PointLight(0x00ff41, 1.6, 11);
+  var rimLight = new THREE.PointLight(0x00ff41, 1.2, 11);
   rimLight.position.set(-3.2, 0.9, -3.0); scene.add(rimLight);
-  var fillLight = new THREE.PointLight(0x3a6fa8, 1.0, 14);
+  var fillLight = new THREE.PointLight(0x7a8ea8, 0.8, 14);
   fillLight.position.set(3.0, 1.2, -2.4); scene.add(fillLight);
 
   var chipGroup = new THREE.Group(); scene.add(chipGroup);
-  var W = 3.05, D = 2.55, TH = 0.10, TOP = TH / 2;
+  var W = 3.4, D = 2.2, TH = 0.06, TOP = TH / 2;
 
-  /* ---------- substrate: solder mask, gold traces, silkscreen ---------- */
-  var subCanvas = document.createElement('canvas');
-  subCanvas.width = subCanvas.height = 1024;
-  var subTex = new THREE.CanvasTexture(subCanvas);
-  subTex.flipY = false;
+  /* seeded, so the board looks the same on every visit */
+  var seed = 7700;
+  function rnd() { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; }
 
-  function drawSub(hot) {
-    var S = 1024, x = subCanvas.getContext('2d');
-    var g = x.createLinearGradient(0, 0, S, S);
-    g.addColorStop(0, '#123a30'); g.addColorStop(0.45, '#0c2b24'); g.addColorStop(1, '#08201b');
-    x.fillStyle = g; x.fillRect(0, 0, S, S);
-    for (var i = 0; i < 9000; i++) {
-      x.fillStyle = 'rgba(255,255,255,' + (Math.random() * 0.028) + ')';
-      x.fillRect(Math.random() * S, Math.random() * S, 2, 2);
+  /* ---------- layout (board units, x right, z toward the viewer) ---------- */
+  var PKG = { x: 0.35, z: 0, w: 1.62, d: 1.30 };
+  var VW = 0.56, VD = 0.64, VRMS = [[-1.13, -0.40], [-1.13, 0.32]];
+  var HOLES = [[-1.58, -0.98], [-0.88, -0.98], [1.30, -0.98], [1.60, -0.98],
+               [-1.58, 0.98], [-0.88, 0.98], [1.30, 0.98], [1.60, 0.98]];
+  var VIAS = [[-0.62, -0.84], [1.30, -0.66], [-0.62, 0.84], [1.30, 0.66]];
+
+  var used = [], parts = [];
+  function block(x, z, w, d) { used.push([x - w / 2, z - d / 2, x + w / 2, z + d / 2]); }
+  function free(x, z, w, d) {
+    if (Math.abs(x) + w / 2 > W / 2 - 0.05 || Math.abs(z) + d / 2 > D / 2 - 0.05) return false;
+    for (var i = 0; i < used.length; i++) {
+      var u = used[i];
+      if (x + w / 2 > u[0] - 0.012 && x - w / 2 < u[2] + 0.012 &&
+          z + d / 2 > u[1] - 0.012 && z - d / 2 < u[3] + 0.012) return false;
     }
-    /* gold guard trace */
-    x.strokeStyle = '#c8a85e'; x.lineWidth = 7; x.strokeRect(38, 38, S - 76, S - 76);
-    x.strokeStyle = 'rgba(200,168,94,0.35)'; x.lineWidth = 2; x.strokeRect(56, 56, S - 112, S - 112);
-    [[70, 70], [S - 70, 70], [70, S - 70], [S - 70, S - 70]].forEach(function (p) {
-      x.fillStyle = '#d8bd76';
-      x.beginPath(); x.arc(p[0], p[1], 11, 0, Math.PI * 2); x.fill();
-    });
-    /* pin-1 chamfer */
-    x.fillStyle = '#e2caa0';
-    x.beginPath(); x.moveTo(66, 66); x.lineTo(150, 66); x.lineTo(66, 150); x.closePath(); x.fill();
-
-    /* quadrant seams: hairlines, lifting only where hovered */
-    function seam(x1, y1, x2, y2, lit) {
-      x.strokeStyle = lit ? 'rgba(255,246,214,0.40)' : 'rgba(200,168,94,0.16)';
-      x.lineWidth = lit ? 3 : 1.5;
-      x.beginPath(); x.moveTo(x1, y1); x.lineTo(x2, y2); x.stroke();
-    }
-    seam(S / 2, 60, S / 2, S - 60, hot >= 0);
-    seam(60, S / 2, S - 60, S / 2, hot >= 0);
-
-    /* centre cavity */
-    x.fillStyle = '#071813'; x.fillRect(348, 364, 328, 296);
-    x.strokeStyle = 'rgba(200,168,94,0.5)'; x.lineWidth = 3; x.strokeRect(348, 364, 328, 296);
-
-    /* package marking */
-    x.fillStyle = 'rgba(226,214,186,0.5)';
-    x.font = '22px "Share Tech Mono", monospace';
-    x.textAlign = 'center'; x.textBaseline = 'middle';
-    x.fillText('ZB-7700-A   HAVERFORD   ECP5-85F', S / 2, S - 92);
-    subTex.needsUpdate = true;
+    return true;
   }
-  drawSub(-1);
+  function part(x, z, w, d, h, col) { block(x, z, w, d); parts.push({ x: x, z: z, w: w, d: d, h: h, col: col }); }
 
-  var maskMat = new THREE.MeshPhongMaterial({ color: 0x0b2a22, specular: 0x244a3e, shininess: 60 });
-  var topMat  = new THREE.MeshPhongMaterial({ map: subTex, specular: 0x59705f, shininess: 80 });
-  var backMat = new THREE.MeshPhongMaterial({ color: 0x0a241d, specular: 0x1c3a30, shininess: 40 });
+  block(PKG.x, PKG.z, PKG.w + 0.12, PKG.d + 0.12);
+  VRMS.forEach(function (v) { block(v[0], v[1], VW + 0.14, VD + 0.08); });
+  HOLES.forEach(function (h) { block(h[0], h[1], 0.26, 0.26); });
+  VIAS.forEach(function (h) { block(h[0], h[1], 0.13, 0.13); });
 
-  /* ---------- laminate cross-section, exposed where a quadrant breaks off ---------- */
-  var secCanvas = document.createElement('canvas');
-  secCanvas.width = 512; secCanvas.height = 64;
+  /* power stages: rows of black inductors above and below the package */
+  for (var ix = -0.55; ix <= 1.08; ix += 0.125) {
+    part(ix, -0.93, 0.095, 0.095, 0.05, 0x1b1c1f);
+    part(ix, 0.93, 0.095, 0.095, 0.05, 0x1b1c1f);
+  }
+  /* controllers and ceramic parts */
+  [[1.44, -0.42], [1.44, -0.14], [1.44, 0.16], [1.44, 0.42]].forEach(function (p) {
+    part(p[0], p[1], 0.17, 0.17, 0.03, 0x17181a);
+  });
+  [[-1.5, 0.80], [-0.66, 0.66], [1.58, -0.75]].forEach(function (p) {
+    part(p[0], p[1], 0.11, 0.11, 0.02, 0xe6e6e4);
+  });
+  /* passives everywhere else */
+  var PASSIVE = [0xd8d2c4, 0xbfa98a, 0x8d9096, 0x121214, 0xe8e8e8];
+  for (var tries = 0; tries < 2600 && parts.length < 520; tries++) {
+    var x = -1.64 + rnd() * 3.28, z = -1.04 + rnd() * 2.08, k = rnd();
+    var w = k < 0.85 ? 0.036 : 0.06, d = k < 0.85 ? 0.019 : 0.06;
+    if (k < 0.85 && rnd() < 0.4) { var s = w; w = d; d = s; }
+    if (free(x, z, w, d)) part(x, z, w, d, k < 0.85 ? 0.016 : 0.018,
+      k < 0.85 ? PASSIVE[Math.floor(rnd() * PASSIVE.length)] : 0x151618);
+  }
+
+  /* ---------- board texture: mask, copper, traces, pads, silkscreen ---------- */
+  var CW = 2048, CH = Math.round(CW * D / W), PXU = CW / W;
+  function cx(x) { return (x + W / 2) * PXU; }
+  function cz(z) { return (z + D / 2) * PXU; }
+  var bc = document.createElement('canvas');
+  bc.width = CW; bc.height = CH;
   (function () {
-    var x = secCanvas.getContext('2d'), y = 0;
-    /* top to bottom: solder mask, copper, prepreg, plane, BT core, plane, prepreg, copper, mask */
-    [[5, '#0d3b2f'], [3, '#c8743a'], [8, '#8f8a4e'], [3, '#d08345'], [16, '#6e6236'],
-     [3, '#d08345'], [8, '#8f8a4e'], [3, '#c8743a'], [15, '#0b2a22']].forEach(function (l) {
-      x.fillStyle = l[1]; x.fillRect(0, y, 512, l[0]); y += l[0];
+    var g = bc.getContext('2d'), i, k;
+    g.fillStyle = '#121315'; g.fillRect(0, 0, CW, CH);
+    for (i = 0; i < 12000; i++) {
+      g.fillStyle = 'rgba(255,255,255,' + (rnd() * 0.025) + ')';
+      g.fillRect(rnd() * CW, rnd() * CH, 2, 2);
+    }
+    for (i = 0; i < 16; i++) {
+      g.fillStyle = 'rgba(120,125,135,0.035)';
+      g.fillRect(rnd() * CW, rnd() * CH, 120 + rnd() * 420, 60 + rnd() * 260);
+    }
+    /* trace buses with 45-degree jogs */
+    g.lineWidth = 2; g.lineJoin = 'round';
+    for (i = 0; i < 90; i++) {
+      var n = 3 + Math.floor(rnd() * 6), x0 = rnd() * CW, y0 = rnd() * CH;
+      var l1 = 60 + rnd() * 320, dj = (rnd() < 0.5 ? -1 : 1) * (30 + rnd() * 120), l2 = 60 + rnd() * 320;
+      var horiz = rnd() < 0.6;
+      g.strokeStyle = 'rgba(80,84,92,' + (0.35 + rnd() * 0.35) + ')';
+      for (k = 0; k < n; k++) {
+        var o = k * 7;
+        g.beginPath();
+        if (horiz) {
+          g.moveTo(x0, y0 + o); g.lineTo(x0 + l1, y0 + o);
+          g.lineTo(x0 + l1 + Math.abs(dj), y0 + o + dj); g.lineTo(x0 + l1 + Math.abs(dj) + l2, y0 + o + dj);
+        } else {
+          g.moveTo(x0 + o, y0); g.lineTo(x0 + o, y0 + l1);
+          g.lineTo(x0 + o + dj, y0 + l1 + Math.abs(dj)); g.lineTo(x0 + o + dj, y0 + l1 + Math.abs(dj) + l2);
+        }
+        g.stroke();
+      }
+    }
+    /* keep-out outline around the package */
+    g.strokeStyle = 'rgba(160,165,175,0.35)'; g.lineWidth = 3;
+    g.strokeRect(cx(PKG.x - PKG.w / 2 - 0.09), cz(PKG.z - PKG.d / 2 - 0.09), (PKG.w + 0.18) * PXU, (PKG.d + 0.18) * PXU);
+    g.lineWidth = 1.5;
+    g.strokeRect(cx(PKG.x - PKG.w / 2 - 0.14), cz(PKG.z - PKG.d / 2 - 0.14), (PKG.w + 0.28) * PXU, (PKG.d + 0.28) * PXU);
+    /* solder pads under every part */
+    g.fillStyle = 'rgba(170,172,176,0.5)';
+    parts.forEach(function (p) {
+      g.fillRect(cx(p.x - p.w / 2 - 0.008), cz(p.z - p.d / 2 - 0.008), (p.w + 0.016) * PXU, (p.d + 0.016) * PXU);
     });
-    /* glass-fibre weave */
-    for (var i = 0; i < 1400; i++) {
-      x.fillStyle = 'rgba(235,228,190,' + (Math.random() * 0.25) + ')';
-      x.fillRect(Math.random() * 512, Math.random() * 64, 3, 1);
-    }
-    /* plated through-vias */
-    for (var vx = 18; vx < 500; vx += 36 + Math.random() * 30) {
-      x.fillStyle = '#e0a15c'; x.fillRect(vx, 5, 4, 50);
-      x.fillStyle = '#3a2614'; x.fillRect(vx + 1, 8, 2, 44);
-    }
-    /* torn fibres along the break */
-    x.fillStyle = 'rgba(255,240,210,0.2)';
-    for (var k = 0; k < 220; k++) x.fillRect(Math.random() * 512, Math.random() * 64, 1, 1 + Math.random() * 3);
+    /* stitching vias around the mounting holes */
+    g.fillStyle = 'rgba(200,170,100,0.55)';
+    HOLES.forEach(function (h) {
+      for (k = 0; k < 8; k++) {
+        var a = k * Math.PI / 4;
+        g.beginPath(); g.arc(cx(h[0] + Math.cos(a) * 0.125), cz(h[1] + Math.sin(a) * 0.125), 4, 0, Math.PI * 2); g.fill();
+      }
+    });
+    /* silkscreen */
+    g.fillStyle = 'rgba(235,235,235,0.75)'; g.font = 'bold 15px monospace';
+    ['C-15', 'U-406', 'C-402', 'L5', 'R12', 'C-13', 'U7', 'C-05', 'Q3', 'L19', 'C-409', 'U-12', 'C-21', 'R4'].forEach(function (t) {
+      var p = parts[Math.floor(rnd() * parts.length)];
+      g.fillText(t, cx(p.x) + 10, cz(p.z) - 8);
+    });
+    g.font = 'bold 22px monospace';
+    g.fillText('ZB-7700-A  REV 2  HAVERFORD', cx(-0.5), cz(1.07));
   })();
-  var secTex = new THREE.CanvasTexture(secCanvas);
-  secTex.wrapS = THREE.RepeatWrapping; secTex.repeat.set(3, 1);
-  var secMat = new THREE.MeshPhongMaterial({ map: secTex, specular: 0x6b5a3a, shininess: 30 });
+  var boardTex = new THREE.CanvasTexture(bc);
+  boardTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
 
-  /* ---------- four quadrant slabs, each free to break away ---------- */
-  var HW = W / 2, HD = D / 2, GAP = 0.003;
-  var quads = [], slabs = [];
-  for (var qi = 0; qi < 4; qi++) {
-    var sx = (qi & 1) ? 1 : -1, sz = (qi & 2) ? -1 : 1;
-    var hx = sx * HW / 2, hz = sz * HD / 2;
-    var geo = new THREE.BoxGeometry(HW - GAP, TH, HD - GAP);
-    /* top face samples this quadrant's slice of the substrate texture */
-    var pos = geo.attributes.position, nrm = geo.attributes.normal, uv = geo.attributes.uv;
-    for (var vi = 0; vi < pos.count; vi++) {
-      if (nrm.getY(vi) > 0.5)
-        uv.setXY(vi, (pos.getX(vi) + hx + W / 2) / W, (D / 2 - (pos.getZ(vi) + hz)) / D);
-    }
-    /* faces toward the centre are fracture faces: [px, nx, py, ny, pz, nz] */
-    var slab = new THREE.Mesh(geo, [sx < 0 ? secMat : maskMat, sx > 0 ? secMat : maskMat,
-      topMat, backMat, sz < 0 ? secMat : maskMat, sz > 0 ? secMat : maskMat]);
-    slab.userData.idx = qi;
-    var group = new THREE.Group();
-    group.position.set(hx, 0, hz);
-    group.add(slab);
-    chipGroup.add(group);
-    slabs.push(slab);
-    quads.push({ idx: qi, group: group, home: new THREE.Vector3(hx, 0, hz), sx: sx, sz: sz,
-                 dir: new THREE.Vector3(sx, 0, sz).normalize(),
-                 amt: 0, from: 0, to: 0, t0: 0, burst: true, pads: [] });
-  }
-  function quadOf(x, z) { return (x >= 0 ? 1 : 0) + (z < 0 ? 2 : 0); }
-  function attach(mesh, x, y, z) {
-    var q = quads[quadOf(x, z)];
-    mesh.position.set(x - q.home.x, y, z - q.home.z);
-    q.group.add(mesh);
-  }
+  var edgeMat = new THREE.MeshPhongMaterial({ color: 0x1c1d20, specular: 0x222222, shininess: 30 });
+  chipGroup.add(new THREE.Mesh(new THREE.BoxGeometry(W, TH, D), [edgeMat, edgeMat,
+    new THREE.MeshPhongMaterial({ map: boardTex, specular: 0x161616, shininess: 25 }),
+    new THREE.MeshPhongMaterial({ color: 0x0d0e10 }), edgeMat, edgeMat]));
 
-  /* keying notches */
-  var notchMat = new THREE.MeshPhongMaterial({ color: 0x061a15, specular: 0x102822, shininess: 20 });
-  [-1, 1].forEach(function (sx) {
-    [-0.42, 0.42].forEach(function (oz) {
-      attach(new THREE.Mesh(new THREE.BoxGeometry(0.10, TH + 0.02, 0.30), notchMat),
-        sx * (W / 2 - 0.045), 0, oz * D);
-    });
+  /* ---------- components, one instanced mesh ---------- */
+  var tmpO = new THREE.Object3D();
+  var partMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshPhongMaterial({ color: 0xffffff, specular: 0x333333, shininess: 50 }), parts.length);
+  parts.forEach(function (p, i) {
+    tmpO.position.set(p.x, TOP + p.h / 2, p.z);
+    tmpO.scale.set(p.w, p.h, p.d);
+    tmpO.updateMatrix();
+    partMesh.setMatrixAt(i, tmpO.matrix);
+    partMesh.setColorAt(i, new THREE.Color(p.col));
   });
+  chipGroup.add(partMesh);
 
-  /* ---------- gold pad array, one instanced mesh per quadrant ---------- */
-  var COLS = 34, ROWS = 28, INSET = 0.30;
-  var stepX = (W - INSET * 2) / (COLS - 1), stepZ = (D - INSET * 2) / (ROWS - 1);
-  var VOID_X = 0.48, VOID_Z = 0.42;
-
-  var nPad = 0;
-  for (var c = 0; c < COLS; c++) {
-    for (var r = 0; r < ROWS; r++) {
-      var pxx = -W / 2 + INSET + c * stepX, pzz = -D / 2 + INSET + r * stepZ;
-      if (Math.abs(pxx) < VOID_X && Math.abs(pzz) < VOID_Z) continue;
-      quads[quadOf(pxx, pzz)].pads.push([pxx, pzz, nPad++]);
-    }
+  /* ---------- gold-plated mounting holes and plain vias ---------- */
+  var goldMat = new THREE.MeshPhongMaterial({ color: 0xb8924e, specular: 0xb89a60, shininess: 80, side: THREE.DoubleSide });
+  var holeMat = new THREE.MeshBasicMaterial({ color: 0x050505 });
+  function hole(x, z, r0, r1, mat) {
+    var ring = new THREE.Mesh(new THREE.RingGeometry(r0, r1, 40), mat);
+    ring.rotation.x = -Math.PI / 2; ring.position.set(x, TOP + 0.002, z);
+    var pit = new THREE.Mesh(new THREE.CircleGeometry(r0, 32), holeMat);
+    pit.rotation.x = -Math.PI / 2; pit.position.set(x, TOP + 0.001, z);
+    chipGroup.add(ring, pit);
   }
+  HOLES.forEach(function (h) { hole(h[0], h[1], 0.055, 0.1, goldMat); });
+  var viaMat = new THREE.MeshPhongMaterial({ color: 0x6b6e72, specular: 0x999999, shininess: 60, side: THREE.DoubleSide });
+  VIAS.forEach(function (h) { hole(h[0], h[1], 0.035, 0.052, viaMat); });
 
-  var padMat = new THREE.MeshPhongMaterial({
-    color: 0xffffff, specular: 0xfff3d0, shininess: 190, emissive: 0x1a1204 });
-  var padGeo = new THREE.CylinderGeometry(0.030, 0.032, 0.022, 12);
-  var GOLD = new THREE.Color(0xd9b869), GOLD_DIM = new THREE.Color(0xa8894a),
-      LIT = new THREE.Color(0xffe9a8);
-  var dummy = new THREE.Object3D();
-  function padBase(k) { return GOLD.clone().lerp(GOLD_DIM, ((k * 37) % 100) / 220); }
-  quads.forEach(function (q) {
-    q.padMesh = new THREE.InstancedMesh(padGeo, padMat, q.pads.length);
-    q.pads.forEach(function (p, k) {
-      dummy.position.set(p[0] - q.home.x, TOP + 0.010, p[1] - q.home.z);
-      dummy.updateMatrix();
-      q.padMesh.setMatrixAt(k, dummy.matrix);
-      q.padMesh.setColorAt(k, padBase(p[2]));
-    });
-    q.group.add(q.padMesh);
-  });
-
-  function paintPads(hot) {
-    quads.forEach(function (q) {
-      q.pads.forEach(function (p, k) {
-        q.padMesh.setColorAt(k, q.idx === hot ? LIT : padBase(p[2]));
+  /* ---------- gold-lidded power modules ---------- */
+  var blackMat = new THREE.MeshPhongMaterial({ color: 0x18191b, specular: 0x333333, shininess: 40 });
+  var lidCanvas = document.createElement('canvas');
+  lidCanvas.width = 256; lidCanvas.height = 292;
+  (function () {
+    var g = lidCanvas.getContext('2d');
+    var gr = g.createLinearGradient(0, 0, 256, 292);
+    gr.addColorStop(0, '#e2cc9c'); gr.addColorStop(0.5, '#cdb37c'); gr.addColorStop(1, '#b39a64');
+    g.fillStyle = gr; g.fillRect(0, 0, 256, 292);
+    for (var i = 0; i < 292; i += 2) {
+      g.fillStyle = 'rgba(255,250,235,' + (rnd() * 0.06) + ')'; g.fillRect(0, i, 256, 1);
+    }
+    g.strokeStyle = 'rgba(120,95,50,0.5)'; g.lineWidth = 3; g.strokeRect(10, 10, 236, 272);
+    g.fillStyle = 'rgba(90,70,35,0.75)'; g.font = 'bold 18px monospace';
+    g.fillText('ZB-VR13', 26, 48); g.fillText('1922', 26, 72);
+    g.font = '12px monospace';
+    g.fillText('N8W2125566 Z7', 26, 250); g.fillText('A0P2FT354630', 26, 266);
+    g.beginPath(); g.arc(200, 150, 7, 0, Math.PI * 2); g.fill();
+  })();
+  var lidMat = new THREE.MeshPhongMaterial({ map: new THREE.CanvasTexture(lidCanvas), color: 0xe0e0e0, specular: 0x8a7550, shininess: 60 });
+  var lidSide = new THREE.MeshPhongMaterial({ color: 0xa88e5c, specular: 0x8a7550, shininess: 60 });
+  VRMS.forEach(function (v) {
+    var base = new THREE.Mesh(new THREE.BoxGeometry(VW + 0.06, 0.03, VD + 0.04), blackMat);
+    base.position.set(v[0], TOP + 0.015, v[1]); chipGroup.add(base);
+    for (var k = 0; k < 8; k++) {
+      var zt = v[1] - VD / 2 + 0.05 + k * (VD - 0.1) / 7;
+      [-1, 1].forEach(function (sd) {
+        var tooth = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.025, 0.045), blackMat);
+        tooth.position.set(v[0] + sd * (VW / 2 + 0.045), TOP + 0.0125, zt); chipGroup.add(tooth);
       });
-      q.padMesh.instanceColor.needsUpdate = true;
-    });
-  }
-
-  /* ---------- centre capacitors (none straddle a seam) ---------- */
-  var capMat = new THREE.MeshPhongMaterial({ color: 0x14161a, specular: 0x4a4f57, shininess: 90 });
-  var capEnd = new THREE.MeshPhongMaterial({ color: 0xb9bec6, specular: 0xffffff, shininess: 160 });
-  for (var cx = -3; cx <= 3; cx++) {
-    for (var cz = -2; cz <= 2; cz++) {
-      if ((cx + cz) % 2 !== 0 || cx === 0 || cz === 0) continue;
-      attach(new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.030, 0.045),
-        [capEnd, capEnd, capMat, capMat, capMat, capMat]), cx * 0.108, TOP + 0.015, cz * 0.118);
     }
+    var lid = new THREE.Mesh(new THREE.BoxGeometry(VW, 0.07, VD), [lidSide, lidSide, lidMat, lidSide, lidSide, lidSide]);
+    lid.position.set(v[0], TOP + 0.03 + 0.035, v[1]); chipGroup.add(lid);
+  });
+
+  /* ---------- the package: substrate, stiffener frame, four dies ---------- */
+  var FW = 1.44, FD = 1.14, FT = 0.085, FH = 0.05, SUB = 0.035, SUB_TOP = TOP + SUB;
+  var DW = 0.56, DD = 0.36, DIE_H = 0.03;
+  var DIES = [[-0.30, 0.24], [0.30, 0.24], [-0.30, -0.185], [0.30, -0.185]];   /* index order matches zones */
+
+  var PW = 1024, PH = Math.round(PW * PKG.d / PKG.w), PPU = PW / PKG.w;
+  function qx(x) { return (x + PKG.w / 2) * PPU; }
+  function qz(z) { return (z + PKG.d / 2) * PPU; }
+  var pc = document.createElement('canvas');
+  pc.width = PW; pc.height = PH;
+  (function () {
+    var g = pc.getContext('2d'), x, z;
+    g.fillStyle = '#2a3037'; g.fillRect(0, 0, PW, PH);
+    g.fillStyle = 'rgba(255,255,255,0.05)';
+    for (x = 3; x < PW; x += 6) for (z = 3; z < PH; z += 6) g.fillRect(x, z, 1.5, 1.5);
+    g.fillStyle = '#1c2025';
+    g.fillRect(qx(-FW / 2 + FT), qz(-FD / 2 + FT), (FW - 2 * FT) * PPU, (FD - 2 * FT) * PPU);
+    /* micro-bump landing pads, revealed when a die lifts out */
+    DIES.forEach(function (dp) {
+      g.fillStyle = '#3a3226';
+      g.fillRect(qx(dp[0] - DW / 2), qz(dp[1] - DD / 2), DW * PPU, DD * PPU);
+      g.fillStyle = '#b8975a';
+      for (var i = 0; i < 18; i++) for (var j = 0; j < 12; j++) {
+        g.beginPath();
+        g.arc(qx(dp[0] - DW / 2 + (i + 0.5) * DW / 18), qz(dp[1] - DD / 2 + (j + 0.5) * DD / 12), 3.2, 0, Math.PI * 2);
+        g.fill();
+      }
+    });
+    /* bridge strips between the dies */
+    g.fillStyle = '#b07a3e';
+    g.fillRect(qx(-0.03), qz(0.10), 0.06 * PPU, 0.08 * PPU);
+    g.fillRect(qx(-0.03), qz(-0.30), 0.06 * PPU, 0.06 * PPU);
+    /* marking in the frame notch */
+    g.fillStyle = 'rgba(240,240,240,0.9)'; g.font = 'bold 26px monospace'; g.textAlign = 'center';
+    g.fillText('ZB-7700', qx(0), qz(-FD / 2 + 0.072));
+  })();
+  var pkgTex = new THREE.CanvasTexture(pc);
+  pkgTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  var pkgGroup = new THREE.Group();
+  pkgGroup.position.set(PKG.x, 0, PKG.z);
+  chipGroup.add(pkgGroup);
+  var subEdge = new THREE.MeshPhongMaterial({ color: 0x22272d });
+  var substrate = new THREE.Mesh(new THREE.BoxGeometry(PKG.w, SUB, PKG.d), [subEdge, subEdge,
+    new THREE.MeshPhongMaterial({ map: pkgTex, specular: 0x333a44, shininess: 50 }), subEdge, subEdge, subEdge]);
+  substrate.position.y = TOP + SUB / 2;
+  pkgGroup.add(substrate);
+
+  /* silver stiffener with the notch at the top */
+  var frameMat = new THREE.MeshPhongMaterial({ color: 0xc9cbce, specular: 0x9a9a9a, shininess: 70 });
+  function bar(x0, z0, x1, z1) {
+    var m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, FH, z1 - z0), frameMat);
+    m.position.set((x0 + x1) / 2, SUB_TOP + FH / 2, (z0 + z1) / 2);
+    pkgGroup.add(m);
   }
+  var NOTCH = 0.2, DIP = 0.04;
+  bar(-FW / 2, FD / 2 - FT, FW / 2, FD / 2);                       /* bottom */
+  bar(-FW / 2, -FD / 2, -FW / 2 + FT, FD / 2 - FT);                /* left */
+  bar(FW / 2 - FT, -FD / 2, FW / 2, FD / 2 - FT);                  /* right */
+  bar(-FW / 2 + FT, -FD / 2, -NOTCH, -FD / 2 + FT);                /* top, left of notch */
+  bar(NOTCH, -FD / 2, FW / 2 - FT, -FD / 2 + FT);                  /* top, right of notch */
+  bar(-NOTCH - FT, -FD / 2 + FT, -NOTCH, -FD / 2 + FT + DIP);      /* notch walls */
+  bar(NOTCH, -FD / 2 + FT, NOTCH + FT, -FD / 2 + FT + DIP);
+  bar(-NOTCH - FT, -FD / 2 + FT + DIP, NOTCH + FT, -FD / 2 + FT + DIP + 0.06);
 
-  var padGlow = new THREE.PointLight(0xffd98a, 0.45, 3.2);
-  padGlow.position.set(0, 0.7, 0); chipGroup.add(padGlow);
+  /* rows of tiny decoupling caps inside the frame */
+  var tinyPos = [];
+  for (var tx = -0.56; tx <= 0.56; tx += 0.024) { tinyPos.push([tx, FD / 2 - FT - 0.03]); }
+  for (var tz = -0.32; tz <= 0.42; tz += 0.024) { tinyPos.push([-FW / 2 + FT + 0.03, tz], [FW / 2 - FT - 0.03, tz]); }
+  for (tx = -0.52; tx <= 0.52; tx += 0.03) { if (Math.abs(tx) > 0.06) tinyPos.push([tx, 0.03]); }
+  var tiny = new THREE.InstancedMesh(new THREE.BoxGeometry(0.012, 0.008, 0.007),
+    new THREE.MeshPhongMaterial({ color: 0xa9adb3, specular: 0xffffff, shininess: 80 }), tinyPos.length);
+  tinyPos.forEach(function (p, i) {
+    tmpO.position.set(p[0], SUB_TOP + 0.004, p[1]); tmpO.scale.set(1, 1, 1); tmpO.updateMatrix();
+    tiny.setMatrixAt(i, tmpO.matrix);
+  });
+  pkgGroup.add(tiny);
 
-  /* ---------- fracture effects: laminate shards, copper sparks, snapping traces ---------- */
+  /* the dies: gold lids subdivided like stacked compute tiles */
+  function dieTexture() {
+    var c = document.createElement('canvas');
+    c.width = 512; c.height = Math.round(512 * DD / DW);
+    var g = c.getContext('2d'), Wc = c.width, Hc = c.height;
+    var gr = g.createLinearGradient(0, 0, Wc, Hc);
+    gr.addColorStop(0, '#e6cd98'); gr.addColorStop(0.55, '#caa96a'); gr.addColorStop(1, '#a9884f');
+    g.fillStyle = gr; g.fillRect(0, 0, Wc, Hc);
+    var cols = 2 + Math.floor(rnd() * 3), rows = 2 + Math.floor(rnd() * 2);
+    for (var i = 0; i < cols; i++) for (var j = 0; j < rows; j++) {
+      var x0 = i * Wc / cols, y0 = j * Hc / rows, bw = Wc / cols, bh = Hc / rows;
+      g.strokeStyle = 'rgba(95,66,25,0.55)'; g.lineWidth = 3;
+      g.strokeRect(x0 + 3, y0 + 3, bw - 6, bh - 6);
+      g.strokeStyle = 'rgba(255,245,215,0.12)'; g.lineWidth = 1;
+      for (var yy = y0 + 8; yy < y0 + bh - 6; yy += 6) {
+        g.beginPath(); g.moveTo(x0 + 7, yy); g.lineTo(x0 + bw - 7, yy); g.stroke();
+      }
+      if (rnd() < 0.6) {
+        g.strokeStyle = 'rgba(95,66,25,0.35)';
+        var cut = x0 + bw * (0.3 + rnd() * 0.4);
+        g.beginPath(); g.moveTo(cut, y0 + 6); g.lineTo(cut, y0 + bh - 6); g.stroke();
+      }
+    }
+    var sh = g.createLinearGradient(0, 0, Wc * 0.6, Hc);
+    sh.addColorStop(0, 'rgba(255,255,255,0.14)'); sh.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = sh; g.fillRect(0, 0, Wc, Hc);
+    return new THREE.CanvasTexture(c);
+  }
+  var dieSide = new THREE.MeshPhongMaterial({ color: 0xa8854c, specular: 0x8a7550, shininess: 60 });
+  var bumpGeo = new THREE.SphereGeometry(0.0065, 8, 6);
+  var bumpMat = new THREE.MeshPhongMaterial({ color: 0xb9bcc2, specular: 0xffffff, shininess: 120 });
+  var dies = [], dieMeshes = [];
+  DIES.forEach(function (dp, i) {
+    var top = new THREE.MeshPhongMaterial({ map: dieTexture(), color: 0xe0e0e0, specular: 0x8a7550, shininess: 60, emissive: 0x000000 });
+    var mesh = new THREE.Mesh(new THREE.BoxGeometry(DW, DIE_H, DD), [dieSide, dieSide, top, dieSide, dieSide, dieSide]);
+    mesh.userData.idx = i;
+    var group = new THREE.Group();
+    group.position.set(dp[0], SUB_TOP + 0.008 + DIE_H / 2, dp[1]);
+    group.add(mesh);
+    /* micro-bumps on the underside */
+    var bumps = new THREE.InstancedMesh(bumpGeo, bumpMat, 18 * 12), b = 0;
+    for (var bi = 0; bi < 18; bi++) for (var bj = 0; bj < 12; bj++) {
+      tmpO.position.set(-DW / 2 + (bi + 0.5) * DW / 18, -DIE_H / 2 - 0.004, -DD / 2 + (bj + 0.5) * DD / 12);
+      tmpO.updateMatrix(); bumps.setMatrixAt(b++, tmpO.matrix);
+    }
+    group.add(bumps);
+    pkgGroup.add(group);
+    var sx = dp[0] >= 0 ? 1 : -1, sz = dp[1] < 0 ? -1 : 1;
+    dies.push({ idx: i, group: group, top: top, home: group.position.clone(), sx: sx, sz: sz,
+                out: new THREE.Vector3(sx, 0, sz).normalize(), amt: 0, from: 0, to: 0, t0: 0 });
+    dieMeshes.push(mesh);
+  });
+
+  var padGlow = new THREE.PointLight(0xffd98a, 0.4, 3.2);
+  padGlow.position.set(PKG.x, 0.7, PKG.z); chipGroup.add(padGlow);
+
+  /* ---------- lift out / settle back ---------- */
   var calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3(), tmpO = new THREE.Object3D();
-
-  var MAXD = 160, nextBit = 0, bits = [];
-  var shards = new THREE.InstancedMesh(new THREE.TetrahedronGeometry(1, 0),
-    new THREE.MeshPhongMaterial({ color: 0xffffff, specular: 0x886644, shininess: 50, flatShading: true }), MAXD);
-  shards.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  shards.frustumCulled = false;
-  var SHARD_COLS = [0x6e6236, 0x8f8a4e, 0xc8743a, 0xd08345, 0x0d3b2f, 0x0b2a22, 0xd9b869, 0xe6dfc0];
-  tmpO.scale.set(0, 0, 0); tmpO.updateMatrix();
-  for (var b = 0; b < MAXD; b++) {
-    bits.push({ life: 0, p: new THREE.Vector3(), v: new THREE.Vector3(),
-                r: new THREE.Euler(), w: new THREE.Vector3(), s: new THREE.Vector3() });
-    shards.setMatrixAt(b, tmpO.matrix);
-    shards.setColorAt(b, new THREE.Color(SHARD_COLS[b % SHARD_COLS.length]));
-  }
-  scene.add(shards);
-
-  var MAXS = 220, nextSpark = 0, sparks = [];
-  var sparkPos = new Float32Array(MAXS * 3), sparkCol = new Float32Array(MAXS * 3);
-  var sparkGeo = new THREE.BufferGeometry();
-  sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPos, 3));
-  sparkGeo.setAttribute('color', new THREE.BufferAttribute(sparkCol, 3));
-  var sparkPts = new THREE.Points(sparkGeo, new THREE.PointsMaterial({ size: 0.035, vertexColors: true,
-    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
-  sparkPts.frustumCulled = false;
-  for (var sp = 0; sp < MAXS; sp++) sparks.push({ life: 0, max: 1, p: new THREE.Vector3(), v: new THREE.Vector3() });
-  scene.add(sparkPts);
-
-  var MAXT = 8, strands = [];
-  var strandPos = new Float32Array(MAXT * 6);
-  var strandGeo = new THREE.BufferGeometry();
-  strandGeo.setAttribute('position', new THREE.BufferAttribute(strandPos, 3));
-  var strandLines = new THREE.LineSegments(strandGeo, new THREE.LineBasicMaterial({ color: 0xe0904a }));
-  strandLines.frustumCulled = false;
-  for (var st = 0; st < MAXT; st++) strands.push({ alive: false, q: null, a: new THREE.Vector3(), b: new THREE.Vector3(), max: 0 });
-  scene.add(strandLines);
-
-  /* random point on a quadrant's broken edges, in board coordinates */
-  function seamPoint(q, out, side) {
-    var y = (Math.random() - 0.5) * TH;
-    if (side === undefined) side = Math.random() < HD / (HW + HD) ? 0 : 1;
-    return side === 0 ? out.set(q.sx * 0.002, y, q.sz * Math.random() * HD)
-                      : out.set(q.sx * Math.random() * HW, y, q.sz * 0.002);
-  }
-  function toWorldDir(v) { return v.applyQuaternion(chipGroup.quaternion); }
-
-  function emitShards(q, n, speed) {
-    for (var i = 0; i < n; i++) {
-      var s = bits[nextBit]; nextBit = (nextBit + 1) % MAXD;
-      chipGroup.localToWorld(seamPoint(q, s.p));
-      toWorldDir(s.v.set(q.sx * Math.random() * 0.7 + (Math.random() - 0.5) * 0.5,
-        0.3 + Math.random() * 1.2, q.sz * Math.random() * 0.7 + (Math.random() - 0.5) * 0.5))
-        .multiplyScalar(speed);
-      s.r.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
-      s.w.set((Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18);
-      var size = 0.012 + Math.pow(Math.random(), 2) * 0.04;
-      s.s.set(size * (0.6 + Math.random()), size * (0.3 + Math.random() * 0.5), size * (0.6 + Math.random()));
-      s.life = 1.0 + Math.random() * 0.9;
-    }
-  }
-  function emitSparks(at, n, speed) {
-    for (var i = 0; i < n; i++) {
-      var s = sparks[nextSpark]; nextSpark = (nextSpark + 1) % MAXS;
-      s.p.copy(at);
-      s.v.set(Math.random() - 0.5, Math.random() - 0.3, Math.random() - 0.5).normalize()
-        .multiplyScalar(speed * (0.4 + Math.random()));
-      s.max = s.life = 0.25 + Math.random() * 0.45;
-    }
-  }
-  function spawnStrands(q) {
-    var n = 0;
-    strands.forEach(function (s) {
-      if (s.alive || n >= 6) return;
-      var side = n % 2;
-      seamPoint(q, tmpA, side);
-      /* body end sits just across the seam; quadrant end rides on the slab */
-      s.a.copy(tmpA);
-      if (side === 0) s.a.x = -s.a.x; else s.a.z = -s.a.z;
-      s.b.copy(tmpA).sub(q.home);
-      s.q = q; s.max = 0.06 + Math.random() * 0.32; s.alive = true; n++;
-    });
-  }
-
-  function updateFx(dt) {
-    var i, s, k;
-    for (i = 0; i < MAXD; i++) {
-      s = bits[i];
-      if (s.life <= 0) continue;
-      s.life -= dt;
-      if (s.life <= 0) { tmpO.scale.set(0, 0, 0); }
-      else {
-        s.v.y -= 2.8 * dt;
-        s.v.multiplyScalar(1 - 0.8 * dt);
-        s.p.addScaledVector(s.v, dt);
-        s.r.x += s.w.x * dt; s.r.y += s.w.y * dt; s.r.z += s.w.z * dt;
-        k = Math.min(1, s.life / 0.4);
-        tmpO.scale.set(s.s.x * k, s.s.y * k, s.s.z * k);
-      }
-      tmpO.position.copy(s.p); tmpO.rotation.copy(s.r); tmpO.updateMatrix();
-      shards.setMatrixAt(i, tmpO.matrix);
-    }
-    shards.instanceMatrix.needsUpdate = true;
-
-    for (i = 0; i < MAXS; i++) {
-      s = sparks[i];
-      if (s.life > 0) {
-        s.life -= dt;
-        s.v.y -= 3.5 * dt;
-        s.p.addScaledVector(s.v, dt);
-      }
-      k = Math.max(0, s.life / s.max);
-      sparkPos[i * 3] = s.p.x; sparkPos[i * 3 + 1] = s.p.y; sparkPos[i * 3 + 2] = s.p.z;
-      sparkCol[i * 3] = 1.0 * k; sparkCol[i * 3 + 1] = 0.72 * k * k; sparkCol[i * 3 + 2] = 0.3 * k * k * k;
-    }
-    sparkGeo.attributes.position.needsUpdate = true;
-    sparkGeo.attributes.color.needsUpdate = true;
-
-    for (i = 0; i < MAXT; i++) {
-      s = strands[i];
-      if (s.alive) {
-        chipGroup.localToWorld(tmpA.copy(s.a));
-        s.q.group.localToWorld(tmpB.copy(s.b));
-        if (tmpA.distanceTo(tmpB) > s.max) {
-          s.alive = false;
-          emitSparks(tmpA.lerp(tmpB, 0.5), 7, 1.1);
-        }
-      }
-      if (!s.alive) tmpB.copy(tmpA.set(0, 0, 0));
-      strandPos.set([tmpA.x, tmpA.y, tmpA.z, tmpB.x, tmpB.y, tmpB.z], i * 6);
-    }
-    strandGeo.attributes.position.needsUpdate = true;
-  }
-
-  /* ---------- detach / reattach timeline ---------- */
-  var CRACK = calm ? 0 : 0.16, OUT_DUR = calm ? 0.35 : 0.95, BACK_DUR = calm ? 0.25 : 0.6;
-  function easeOutBack(x) { var c = 1.25; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); }
+  var UP = calm ? 0.3 : 0.8, DOWN = calm ? 0.25 : 0.55;
+  function easeOut(x) { return 1 - Math.pow(1 - x, 3); }
   function easeInOut(x) { return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }
-
   var now = 0;
-  function detach(q) {
-    q.from = q.amt; q.to = 1; q.t0 = now;
-    q.crack = q.amt < 0.05 ? CRACK : 0;
-    q.burst = false;
-    if (!calm && q.crack) emitSparks(chipGroup.localToWorld(seamPoint(q, tmpA)), 6, 0.6);
-  }
-  function reattach(q) { q.from = q.amt; q.to = 0; q.t0 = now; }
-
-  function poseQuad(q, t) {
-    var e = now - q.t0, a, shake = 0;
-    if (q.to === 1) {
-      if (e < q.crack) { a = q.from; shake = 0.006 * (e / q.crack); }
-      else {
-        if (!q.burst) {
-          q.burst = true;
-          if (!calm) { chipGroup.updateMatrixWorld(true); emitShards(q, 110, 1.1); spawnStrands(q); }
-        }
-        a = q.from + (1 - q.from) * easeOutBack(Math.min(1, (e - q.crack) / OUT_DUR));
-      }
-    } else {
-      var p = Math.min(1, e / BACK_DUR);
-      a = q.from * (1 - easeInOut(p));
-      if (p >= 1 && q.amt > 0 && !calm) {
-        chipGroup.updateMatrixWorld(true);
-        emitShards(q, 10, 0.35);
-        emitSparks(chipGroup.localToWorld(seamPoint(q, tmpA)), 8, 0.5);
-      }
-    }
-    q.amt = a;
-    var bob = Math.sin(t * 1.7 + q.idx) * 0.025 * Math.min(1, a);
-    q.group.position.set(
-      q.home.x + q.dir.x * 0.27 * a + (Math.random() - 0.5) * shake,
-      0.6 * a + bob + (Math.random() - 0.5) * shake,
-      q.home.z + q.dir.z * 0.27 * a + (Math.random() - 0.5) * shake);
-    /* peel so the broken faces turn toward the viewer */
-    q.group.rotation.set(q.sz * 0.36 * a, 0.10 * a * q.sx * q.sz, -q.sx * 0.36 * a);
+  function lift(d) { d.from = d.amt; d.to = 1; d.t0 = now; }
+  function settle(d) { d.from = d.amt; d.to = 0; d.t0 = now; }
+  function poseDie(d, t) {
+    var p = Math.min(1, (now - d.t0) / (d.to === 1 ? UP : DOWN));
+    var a = d.to === 1 ? d.from + (1 - d.from) * easeOut(p) : d.from * (1 - easeInOut(p));
+    d.amt = a;
+    var bob = Math.sin(t * 1.7 + d.idx) * 0.02 * a;
+    d.group.position.set(d.home.x + d.out.x * 0.16 * a, d.home.y + 0.55 * a + bob, d.home.z + d.out.z * 0.16 * a);
+    d.group.rotation.set(d.sz * 0.28 * a, 0, -d.sx * 0.28 * a);
   }
 
-  /* ---------- hover explores, first click detaches, second click opens ---------- */
+  /* ---------- hover explores, first click lifts the die, second click opens ---------- */
   var raycaster = new THREE.Raycaster(), ptr = new THREE.Vector2(-99, -99);
-  var hovered = -1, detached = -1, shown = -2, mouseIn = false, hideTimer = null;
+  var hovered = -1, lifted = -1, shown = -2, mouseIn = false, hideTimer = null;
 
   function pickAt(clientX, clientY) {
     var rect = container.getBoundingClientRect();
     ptr.x = (clientX - rect.left) / rect.width * 2 - 1;
     ptr.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(ptr, camera);
-    var hits = raycaster.intersectObjects(slabs, false);
+    var hits = raycaster.intersectObjects(dieMeshes, false);
     return hits.length ? hits[0].object.userData.idx : -1;
   }
-
+  function glow(idx) {
+    dies.forEach(function (d) { d.top.emissive.setHex(d.idx === idx ? 0x4a3510 : 0x000000); });
+  }
   function showZone(idx) {
     var z = zones[idx];
     clearTimeout(hideTimer);
-    drawSub(idx); paintPads(idx);
+    glow(idx);
     container.classList.add('explored');
     if (hint) hint.classList.add('hidden');
     infoPanel.innerHTML = '<div class="bi-name">' + z.name + '</div><hr class="bi-hr">' +
       '<p class="bi-desc">' + z.desc + '</p>' +
       '<a class="bi-link" href="' + z.link + '">' + z.linkLabel + '</a><br>' +
-      '<span class="bi-hint">[ ' + (idx === detached ? 'click the detached block again to open'
-                                                      : 'click the quadrant to detach it') + ' ]</span>';
+      '<span class="bi-hint">[ ' + (idx === lifted ? 'click the lifted die again to open'
+                                                    : 'click the die to lift it out') + ' ]</span>';
     infoPanel.style.display = 'block';
     requestAnimationFrame(function () { infoPanel.style.opacity = '1'; });
   }
   function clearZone() {
     infoPanel.style.opacity = '0';
     hideTimer = setTimeout(function () { infoPanel.style.display = 'none'; }, 250);
-    drawSub(-1); paintPads(-1);
+    glow(-1);
     container.classList.remove('explored');
     if (hint) hint.classList.remove('hidden');
   }
   function refresh(force) {
-    var s = hovered >= 0 ? hovered : detached;
+    var s = hovered >= 0 ? hovered : lifted;
     if (s === shown && !force) return;
     shown = s;
     if (s >= 0) showZone(s); else clearZone();
@@ -623,17 +604,17 @@ I am also member of my school <a
   });
   renderer.domElement.addEventListener('click', function (e) {
     var s = pickAt(e.clientX, e.clientY);
-    if (s >= 0 && s === detached) {
-      if (quads[s].amt > 0.5) openZone(s);
+    if (s >= 0 && s === lifted) {
+      if (dies[s].amt > 0.5) openZone(s);
       return;
     }
-    if (detached >= 0) reattach(quads[detached]);
-    detached = s;
-    if (s >= 0) detach(quads[s]);
+    if (lifted >= 0) settle(dies[lifted]);
+    lifted = s;
+    if (s >= 0) lift(dies[s]);
     refresh(true);
   });
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && detached >= 0) { reattach(quads[detached]); detached = -1; refresh(true); }
+    if (e.key === 'Escape' && lifted >= 0) { settle(dies[lifted]); lifted = -1; refresh(true); }
   });
 
   var BASE_TILT = 1.30;
@@ -662,19 +643,21 @@ I am also member of my school <a
     curX += (tiltX - curX) * 0.06; curY += (tiltY - curY) * 0.06;
     chipGroup.rotation.x = curX; chipGroup.rotation.y = curY;
     chipGroup.position.y = Math.sin(t * 0.8) * 0.05;
-    quads.forEach(function (q) { poseQuad(q, t); });
-    chipGroup.updateMatrixWorld(true);
-    updateFx(dt);
-    padGlow.intensity = 0.38 + Math.sin(t * 2.0) * 0.14;
-    rimLight.intensity = 1.4 + Math.sin(t * 1.2) * 0.35;
+    dies.forEach(function (d) { poseDie(d, t); });
+    padGlow.intensity = 0.34 + Math.sin(t * 2.0) * 0.12;
+    rimLight.intensity = 1.1 + Math.sin(t * 1.2) * 0.3;
     sheen.position.x = Math.sin(t * 0.5) * 2.4;
     renderer.render(scene, camera);
   }
   animate();
 
-  new ResizeObserver(function () {
+  /* fill the frame, shrinking on narrow screens so the module never clips */
+  function fit() {
     var w = container.clientWidth, h = container.clientHeight;
     renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
-  }).observe(container);
+    chipGroup.scale.setScalar(Math.min(1.3, 1.05 * w / h));
+  }
+  fit();
+  new ResizeObserver(fit).observe(container);
 })();
 </script>
