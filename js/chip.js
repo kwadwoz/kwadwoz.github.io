@@ -54,7 +54,7 @@
   function canvas(w, h) { var c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
 
   var scene  = new THREE.Scene();
-  var camera = new THREE.PerspectiveCamera(32, container.clientWidth / container.clientHeight, 0.1, 60);
+  var camera = new THREE.PerspectiveCamera(32, container.clientWidth / container.clientHeight, 2, 14);
   camera.position.set(0, 0.5, 6.8);
   camera.lookAt(0, 0, 0);
 
@@ -197,6 +197,8 @@
   VRMS.forEach(function (v) { block(v[0], v[1], VW + 0.14, VD + 0.08); });
   HOLES.forEach(function (h) { block(h[0], h[1], 0.26, 0.26); });
   VIAS.forEach(function (h) { block(h[0], h[1], 0.13, 0.13); });
+  var LABEL = { x: -1.225, z: 0.895, w: 0.36, d: 0.17 };      /* serial-number sticker */
+  block(LABEL.x, LABEL.z, LABEL.w + 0.03, LABEL.d + 0.03);
 
   /* power stages: rows of moulded inductors above and below the package */
   for (var ix = -0.55; ix <= 1.08; ix += 0.125) {
@@ -402,6 +404,37 @@
       if (p.n < 3 || !free(p.x + 0.035, p.z - 0.028, 0.075, 0.016)) return;
       g.fillText((p.res ? 'R' : 'C') + (101 + n * 3), cx(p.x), cz(p.z) - 6);
     });
+    /* serial-number sticker: matte paper, a barcode, slightly crooked like a hand-applied label */
+    (function () {
+      var lw = LABEL.w * PXU, ld = LABEL.d * PXU, q, bx;
+      [g, b].forEach(function (c) { c.save(); c.translate(cx(LABEL.x), cz(LABEL.z)); c.rotate(-0.018); });
+      g.shadowColor = 'rgba(0,0,0,0.6)'; g.shadowBlur = 5 * SC; g.shadowOffsetY = 1.5 * SC;
+      g.fillStyle = '#e4e2da'; g.fillRect(-lw / 2, -ld / 2, lw, ld);
+      g.shadowColor = 'transparent';
+      b.fillStyle = '#9c9c9c'; b.fillRect(-lw / 2, -ld / 2, lw, ld);
+      for (q = 0; q < 500; q++) { g.fillStyle = 'rgba(0,0,0,' + (rnd() * 0.04) + ')'; g.fillRect(-lw / 2 + rnd() * lw, -ld / 2 + rnd() * ld, 2, 1); }
+      g.fillStyle = '#17181a';
+      for (bx = -lw / 2 + 12; bx < lw / 2 - 12;) { var bw = 1 + Math.floor(rnd() * 3) * 1.2; g.fillRect(bx, -ld / 2 + 10, bw, ld * 0.48); bx += bw + 1.2 + Math.floor(rnd() * 3) * 1.2; }
+      g.font = 'bold 13px monospace'; g.textAlign = 'center';
+      g.fillText('S/N ZB7700A2647-0018', 0, ld / 2 - 22);
+      g.font = '10px monospace'; g.fillText('MFG 2026-11  QC PASS  LOT K4107', 0, ld / 2 - 9);
+      g.textAlign = 'left';
+      g.restore(); b.restore();
+    })();
+    /* a little dust and a few stray fibres */
+    for (i = 0; i < 260; i++) {
+      g.fillStyle = 'rgba(235,235,225,' + (0.08 + rnd() * 0.22) + ')';
+      g.fillRect(rnd() * CW, rnd() * CH, 0.8 + rnd() * 1.4, 0.8 + rnd() * 1.4);
+    }
+    g.lineWidth = 0.9;
+    for (i = 0; i < 14; i++) {
+      var fx = rnd() * CW, fy = rnd() * CH, fa = rnd() * 6.28, fl = 14 + rnd() * 30;
+      g.strokeStyle = 'rgba(235,235,225,' + (0.12 + rnd() * 0.16) + ')';
+      g.beginPath(); g.moveTo(fx, fy);
+      g.quadraticCurveTo(fx + Math.cos(fa) * fl * 0.5 + (rnd() - 0.5) * 16, fy + Math.sin(fa) * fl * 0.5 + (rnd() - 0.5) * 16, fx + Math.cos(fa) * fl, fy + Math.sin(fa) * fl);
+      g.stroke();
+    }
+    g.fillStyle = 'rgba(236,238,236,0.85)';
     g.font = 'bold 11px monospace';
     g.fillText('PWR  LNK  ACT', cx(-1.335), cz(-0.905));
     g.font = 'bold 22px monospace';
@@ -538,6 +571,24 @@
     barrel.position.set(h[0], 0, h[1]);
     chipGroup.add(ring, barrel);
   });
+  /* stainless socket-head screws with washers in the four corner holes; the inner holes stay open for a heatsink */
+  (function () {
+    var steel = new THREE.MeshStandardMaterial({ color: 0x9fa2a8, roughness: 0.38 / SMUDGE_MEAN, roughnessMap: smudge(3), metalness: 1.0 });
+    var dark = new THREE.MeshStandardMaterial({ color: 0x0b0b0c, roughness: 0.6, metalness: 0.6 });
+    /* head profile: chamfered top edge, turned on a lathe */
+    var head = new THREE.LatheGeometry([[0, 0.062], [0.062, 0.062], [0.076, 0.050], [0.078, 0.008], [0.078, 0]].map(function (q) {
+      return new THREE.Vector2(q[0], q[1]); }), 48);
+    var washer = new THREE.CylinderGeometry(0.094, 0.094, 0.008, 48);
+    var socket = new THREE.CylinderGeometry(0.036, 0.036, 0.004, 6);
+    [[-1.58, -0.98], [1.60, -0.98], [-1.58, 0.98], [1.60, 0.98]].forEach(function (h) {
+      var grp = new THREE.Group(); grp.position.set(h[0], TOP, h[1]); grp.rotation.y = rnd() * 6.28;
+      var w = new THREE.Mesh(washer, steel); w.position.y = 0.004;
+      var hd = new THREE.Mesh(head, steel); hd.position.y = 0.008;
+      var so = new THREE.Mesh(socket, dark); so.position.y = 0.008 + 0.062 + 0.0005;
+      [w, hd].forEach(function (m) { m.castShadow = true; m.receiveShadow = true; });
+      grp.add(w, hd, so); chipGroup.add(grp);
+    });
+  })();
   var viaMat = new THREE.MeshStandardMaterial({ color: 0xa6a9ae, roughness: 0.35, metalness: 1.0, side: THREE.DoubleSide });
   var pitMat = new THREE.MeshBasicMaterial({ color: 0x030303 });
   VIAS.forEach(function (h) {
@@ -890,6 +941,63 @@
     setActive(-1);
   });
 
+  /* ---------- finishing pass: screen-space ambient occlusion from the depth buffer, plus a trace of sensor grain ---------- */
+  var post = null;
+  if (renderer.capabilities.isWebGL2 && renderer.extensions.has('EXT_color_buffer_float')) {
+    var rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(4, 4) });
+    var postMat = new THREE.ShaderMaterial({
+      depthTest: false, depthWrite: false, blending: THREE.NoBlending,
+      uniforms: { tColor: { value: rt.texture }, tDepth: { value: rt.depthTexture }, uProj: { value: new THREE.Vector2(1, 1) },
+                  uPx: { value: new THREE.Vector2(1, 1) }, uNear: { value: camera.near }, uFar: { value: camera.far }, uTime: { value: 0 } },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: [
+        'varying vec2 vUv;',
+        'uniform sampler2D tColor; uniform sampler2D tDepth;',
+        'uniform vec2 uProj; uniform vec2 uPx; uniform float uNear; uniform float uFar; uniform float uTime;',
+        'const float RADIUS = 0.13;',
+        'vec3 viewPos(vec2 uv) {',
+        '  float d = texture2D(tDepth, uv).x;',
+        '  float z = (uNear * uFar) / ((uFar - uNear) * d - uFar);',
+        '  return vec3((uv * 2.0 - 1.0) / uProj * -z, z);',
+        '}',
+        'float hash(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }',
+        'void main() {',
+        '  vec4 c = texture2D(tColor, vUv);',
+        '  float ao = 1.0;',
+        '  if (texture2D(tDepth, vUv).x < 1.0) {',
+        '    vec3 P = viewPos(vUv);',
+        /* normal from the depth buffer, taking the smoother side at every edge */
+        '    vec3 xa = viewPos(vUv + vec2(uPx.x, 0.0)) - P, xb = P - viewPos(vUv - vec2(uPx.x, 0.0));',
+        '    vec3 ya = viewPos(vUv + vec2(0.0, uPx.y)) - P, yb = P - viewPos(vUv - vec2(0.0, uPx.y));',
+        '    vec3 N = normalize(cross(abs(xa.z) < abs(xb.z) ? xa : xb, abs(ya.z) < abs(yb.z) ? ya : yb));',
+        '    float rUv = RADIUS * uProj.y * 0.5 / -P.z;',
+        '    float spin = hash(gl_FragCoord.xy) * 6.2831853, occ = 0.0;',
+        '    for (int i = 0; i < 16; i++) {',
+        '      float f = (float(i) + 0.5) / 16.0, a = spin + float(i) * 2.3999632;',
+        '      vec2 o = vec2(cos(a) * uProj.y / uProj.x, sin(a)) * rUv * sqrt(f);',
+        '      vec3 v = viewPos(vUv + o) - P;',
+        '      float vv = dot(v, v);',
+        '      occ += max(0.0, dot(v, N) / sqrt(vv + 1e-6) - 0.12) * max(0.0, 1.0 - vv / (RADIUS * RADIUS));',
+        '    }',
+        '    ao = clamp(1.0 - 2.6 * occ / 16.0, 0.0, 1.0);',
+        '  }',
+        '  float grain = hash(gl_FragCoord.xy + fract(uTime) * 311.0) - 0.5;',
+        '  gl_FragColor = vec4(c.rgb * ao * (1.0 + grain * 0.07), c.a);',
+        '  #include <tonemapping_fragment>',
+        '  #include <colorspace_fragment>',
+        '}'].join('\n')
+    });
+    var postScene = new THREE.Scene(), postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    var quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), postMat); quad.frustumCulled = false; postScene.add(quad);
+    post = { rt: rt, mat: postMat, scene: postScene, cam: postCam };
+  }
+  function draw() {
+    if (!post) { renderer.render(scene, camera); return; }
+    if (!calm) post.mat.uniforms.uTime.value = now;
+    renderer.setRenderTarget(post.rt); renderer.render(scene, camera);
+    renderer.setRenderTarget(null);    renderer.render(post.scene, post.cam);
+  }
+
   var t = 0, clock = new THREE.Clock();
   function animate() {
     requestAnimationFrame(animate);
@@ -915,7 +1023,7 @@
     padGlow.intensity = 0.3 + Math.sin(t * 2.0) * 0.1;
     rimLight.intensity = 46 + Math.sin(t * 1.2) * 12;
     sheen.position.x = Math.sin(t * 0.5) * 2.4;
-    renderer.render(scene, camera);
+    draw();
     placeTags();
   }
   animate();
@@ -925,6 +1033,12 @@
     var w = container.clientWidth, h = container.clientHeight;
     renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
     chipGroup.scale.setScalar(Math.min(1.45, 1.05 * w / h));
+    if (post) {
+      var pr = renderer.getPixelRatio(), bw = Math.max(4, Math.round(w * pr)), bhh = Math.max(4, Math.round(h * pr));
+      post.rt.setSize(bw, bhh);
+      post.mat.uniforms.uPx.value.set(1 / bw, 1 / bhh);
+      post.mat.uniforms.uProj.value.set(camera.projectionMatrix.elements[0], camera.projectionMatrix.elements[5]);
+    }
   }
   fit();
   new ResizeObserver(fit).observe(container);
