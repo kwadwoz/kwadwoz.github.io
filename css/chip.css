@@ -27,6 +27,53 @@
 }
 @media (max-width: 600px) { #chip-3d { height: 320px; } }
 
+/* Project name tags pinned to the dies */
+#chip-3d .chip-tag {
+  position: absolute;
+  left: 0; top: 0;
+  z-index: 2;
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  font-size: 10px;
+  line-height: 1.25;
+  letter-spacing: 0.5px;
+  box-sizing: border-box;
+  width: max-content;
+  text-align: center;
+  text-decoration: none;
+  color: #00ff41;
+  text-shadow: 0 0 6px rgba(0, 255, 65, 0.5);
+  background: rgba(4, 12, 4, 0.86);
+  border: 1px solid rgba(0, 255, 65, 0.6);
+  border-radius: 2px;
+  padding: 3px 5px;
+  cursor: pointer;
+  will-change: transform;
+  animation: tagPulse 2.4s ease-in-out infinite;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+}
+#chip-3d .chip-tag::after { content: ' \2197'; }
+#chip-3d .chip-tag:nth-of-type(2) { animation-delay: 0.6s; }
+#chip-3d .chip-tag:nth-of-type(3) { animation-delay: 1.2s; }
+#chip-3d .chip-tag:nth-of-type(4) { animation-delay: 1.8s; }
+#chip-3d .chip-tag.on,
+#chip-3d .chip-tag:hover,
+#chip-3d .chip-tag:focus {
+  color: #041004;
+  text-shadow: none;
+  background: #00ff41;
+  box-shadow: 0 0 18px rgba(0, 255, 65, 0.7);
+  animation: none;
+  outline: none;
+}
+@keyframes tagPulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(0, 255, 65, 0); }
+  50%      { box-shadow: 0 0 12px rgba(0, 255, 65, 0.55); }
+}
+@media (max-width: 600px) {
+  #chip-3d .chip-tag { font-size: 8px; letter-spacing: 0; padding: 2px 3px; }
+}
+@media (prefers-reduced-motion: reduce) { #chip-3d .chip-tag { animation: none; } }
+
 /* Click-to-explore hint badge */
 #chip-hint {
   position: absolute;

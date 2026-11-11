@@ -807,11 +807,42 @@
     infoPanel.style.display = 'block';
     requestAnimationFrame(function () { infoPanel.style.opacity = '1'; });
   }
-  function setActive(idx) {
-    if (idx === active) return;
-    if (active >= 0) settle(dies[active]);
-    active = idx;
-    if (idx >= 0) { lift(dies[idx]); showZone(idx); }   /* the panel keeps the last project, so its link stays reachable */
+  /* quiet = lift without opening the info panel, used by the idle demo */
+  function setActive(idx, quiet) {
+    if (idx !== active) {
+      if (active >= 0) settle(dies[active]);
+      active = idx;
+      if (idx >= 0) lift(dies[idx]);
+      tags.forEach(function (el, i) { el.classList.toggle('on', i === idx); });
+    }
+    if (idx >= 0 && !quiet) showZone(idx);              /* the panel keeps the last project, so its link stays reachable */
+  }
+
+  /* ---------- a name tag pinned to every die: a real link, so it is obvious each die is a project ---------- */
+  var lastInput = -3;      /* the idle demo starts two seconds after load */
+  var tags = zones.map(function (z, i) {
+    var a = document.createElement('a');
+    a.className = 'chip-tag'; a.href = z.link; a.textContent = z.name;
+    a.setAttribute('aria-label', z.name + ': open project');
+    if (z.link.indexOf('http') === 0) { a.target = '_blank'; a.rel = 'noopener'; }
+    a.addEventListener('mouseenter', function () { lastInput = now; setActive(i); });
+    a.addEventListener('focus', function () { lastInput = now; setActive(i); });
+    container.appendChild(a);
+    return a;
+  });
+  var tagPos = new THREE.Vector3(), tagEdge = new THREE.Vector3(), tagMax = 0;
+  function placeTags() {
+    var w = container.clientWidth, h = container.clientHeight;
+    /* keep every tag inside its own die, so neighbours never overlap */
+    tagPos.set(-DW / 2, DIE_H, 0); dies[0].group.localToWorld(tagPos); tagPos.project(camera);
+    tagEdge.set(DW / 2, DIE_H, 0); dies[0].group.localToWorld(tagEdge); tagEdge.project(camera);
+    var dieW = Math.round(Math.abs(tagEdge.x - tagPos.x) * 0.5 * w * 0.94);
+    if (Math.abs(dieW - tagMax) > 2) { tagMax = dieW; tags.forEach(function (el) { el.style.maxWidth = dieW + 'px'; }); }
+    dies.forEach(function (d, i) {
+      tagPos.set(0, DIE_H + 0.01, 0); d.group.localToWorld(tagPos); tagPos.project(camera);
+      tags[i].style.transform = 'translate(-50%,-50%) translate(' + ((tagPos.x * 0.5 + 0.5) * w).toFixed(1) + 'px,' +
+        ((-tagPos.y * 0.5 + 0.5) * h).toFixed(1) + 'px)';
+    });
   }
   function openZone(idx) {
     var l = zones[idx].link;
@@ -819,11 +850,13 @@
   }
 
   renderer.domElement.addEventListener('mousemove', function (e) {
+    lastInput = now;
     var s = pickAt(e.clientX, e.clientY);
     setActive(s);
     renderer.domElement.style.cursor = s >= 0 ? 'pointer' : 'crosshair';
   });
   renderer.domElement.addEventListener('click', function (e) {
+    lastInput = now;
     var s = pickAt(e.clientX, e.clientY);
     if (s < 0) { setActive(-1); return; }
     /* on touch screens there is no hover: the first tap lifts, the second opens */
@@ -843,7 +876,7 @@
   container.addEventListener('mouseenter', function () { mouseIn = true; });
   container.addEventListener('mouseleave', function () {
     mouseIn = false; ptr.set(-99, -99);
-    tiltX = BASE_TILT; tiltY = 0;
+    tiltX = BASE_TILT; tiltY = 0; lastInput = now;
     setActive(-1);
   });
 
@@ -859,6 +892,11 @@
     curX += (tiltX - curX) * 0.06; curY += (tiltY - curY) * 0.06;
     chipGroup.rotation.x = curX; chipGroup.rotation.y = curY;
     chipGroup.position.y = Math.sin(t * 0.8) * 0.05;
+    /* idle demo: with nobody touching it, the dies take turns lifting out to show they come apart */
+    if (!calm && !mouseIn && now - lastInput > 5) {
+      var beat = (now - lastInput - 5) / 3.2;
+      setActive(beat % 1 < 0.6 ? Math.floor(beat) % 4 : -1, true);
+    }
     dies.forEach(function (d) { poseDie(d, t); });
     /* PWR steady, LNK breathing, ACT flickering like bus traffic */
     var lnk = 0.75 + Math.sin(t * 1.6) * 0.25, act = calm ? 1 : (Math.sin(t * 23) + Math.sin(t * 7.3) > 0.2 ? 1 : 0.12);
@@ -868,6 +906,7 @@
     rimLight.intensity = 46 + Math.sin(t * 1.2) * 12;
     sheen.position.x = Math.sin(t * 0.5) * 2.4;
     renderer.render(scene, camera);
+    placeTags();
   }
   animate();
 
