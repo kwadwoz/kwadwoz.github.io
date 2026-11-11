@@ -11,6 +11,9 @@
   if (!container || typeof THREE === 'undefined') return;
   var BASE = window.SITE_BASE || '';
 
+  /* the project name as it is laser-marked on each die, one array entry per line */
+  var MARKS = [['ECP5', 'ETHERNET-SOC'], ['ALL', 'PROJECTS'], ['MANHATTAN', 'REASONING'], ['MINI-DSL', 'SCALA']];
+
   /* die index = (x >= 0 ? 1 : 0) + (z < 0 ? 2 : 0) */
   var zones = [
     { name: 'ECP5-ETHERNET-SOC', tag: 'HARDWARE',
@@ -712,7 +715,23 @@
       /* the metallisation stops short of the sawn edge */
       g.strokeStyle = 'rgba(70,46,14,0.55)'; g.lineWidth = 3; g.strokeRect(9, 9, Wc - 18, Hc - 18);
       b.strokeStyle = '#4a4a4a'; b.lineWidth = 4; b.strokeRect(9, 9, Wc - 18, Hc - 18);
-      /* laser marking: part number, lot code and a data-matrix */
+      /* the project name, laser-engraved large: dark annealed metal with a bright lower lip where the cut catches the light */
+      var lines = MARKS[idx], size = 150, widest = 0;
+      g.font = 'bold ' + size + 'px monospace';
+      lines.forEach(function (l) { widest = Math.max(widest, g.measureText(l).width); });
+      size = Math.min(150, Math.floor(size * Wc * 0.8 / widest));
+      g.font = b.font = 'bold ' + size + 'px monospace';
+      g.textAlign = b.textAlign = 'center'; g.textBaseline = b.textBaseline = 'middle';
+      lines.forEach(function (l, n) {
+        var ty = Hc * 0.46 + (n - (lines.length - 1) / 2) * size * 1.12;
+        g.fillStyle = 'rgba(255,242,205,0.5)'; g.fillText(l, Wc / 2, ty + 3);
+        g.fillStyle = 'rgba(52,34,8,0.9)';     g.fillText(l, Wc / 2, ty);
+        b.fillStyle = '#383838';               b.fillText(l, Wc / 2, ty);
+      });
+      g.font = 'bold 30px monospace'; g.fillStyle = 'rgba(62,42,12,0.7)';
+      g.fillText(zones[idx].tag.split('').join(' '), Wc / 2, 62);
+      g.textAlign = b.textAlign = 'left'; g.textBaseline = b.textBaseline = 'alphabetic';
+      /* part number, lot code and a data-matrix */
       g.fillStyle = 'rgba(62,42,12,0.62)'; g.font = 'bold 26px monospace';
       g.fillText('ZB7700-D' + idx, 34, Hc - 68);
       g.font = '19px monospace'; g.fillText('TW 2647 A2 K' + (4107 + idx * 311), 34, Hc - 40);
@@ -730,7 +749,7 @@
   var hitMat = new THREE.MeshBasicMaterial({ visible: false });
   var dies = [], pickables = [];
   DIES.forEach(function (dp, i) {
-    var top = goldTop(dieTexture(i), DW, DD, 0.22, 0, 0.12);
+    var top = goldTop(dieTexture(i), DW, DD, 0.22, 0, 0.5);
     var mesh = new THREE.Mesh(dieGeo, [top, goldSide]);
     mesh.userData.idx = i; mesh.castShadow = true; mesh.receiveShadow = true;
     var group = new THREE.Group();
@@ -818,11 +837,11 @@
     if (idx >= 0 && !quiet) showZone(idx);              /* the panel keeps the last project, so its link stays reachable */
   }
 
-  /* ---------- a name tag pinned to every die: a real link, so it is obvious each die is a project ---------- */
+  /* ---------- an OPEN link that appears on the lifted die; real anchors, so the dies are keyboard reachable too ---------- */
   var lastInput = -3;      /* the idle demo starts two seconds after load */
   var tags = zones.map(function (z, i) {
     var a = document.createElement('a');
-    a.className = 'chip-tag'; a.href = z.link; a.textContent = z.name;
+    a.className = 'chip-tag'; a.href = z.link; a.textContent = 'OPEN';
     a.setAttribute('aria-label', z.name + ': open project');
     if (z.link.indexOf('http') === 0) { a.target = '_blank'; a.rel = 'noopener'; }
     a.addEventListener('mouseenter', function () { lastInput = now; setActive(i); });
@@ -830,23 +849,14 @@
     container.appendChild(a);
     return a;
   });
-  var tagPos = new THREE.Vector3(), tagEdge = new THREE.Vector3(), tagMax = 0;
+  var tagPos = new THREE.Vector3();
   function placeTags() {
     var w = container.clientWidth, h = container.clientHeight;
-    /* keep every tag inside its own die, so neighbours never overlap */
-    tagPos.set(-DW / 2, DIE_H, 0); dies[0].group.localToWorld(tagPos); tagPos.project(camera);
-    tagEdge.set(DW / 2, DIE_H, 0); dies[0].group.localToWorld(tagEdge); tagEdge.project(camera);
-    var dieW = Math.round(Math.abs(tagEdge.x - tagPos.x) * 0.5 * w * 0.94);
-    if (Math.abs(dieW - tagMax) > 2) { tagMax = dieW; tags.forEach(function (el) { el.style.maxWidth = dieW + 'px'; }); }
     dies.forEach(function (d, i) {
-      tagPos.set(0, DIE_H + 0.01, 0); d.group.localToWorld(tagPos); tagPos.project(camera);
+      tagPos.set(0, DIE_H + 0.01, DD * 0.33); d.group.localToWorld(tagPos); tagPos.project(camera);
       tags[i].style.transform = 'translate(-50%,-50%) translate(' + ((tagPos.x * 0.5 + 0.5) * w).toFixed(1) + 'px,' +
         ((-tagPos.y * 0.5 + 0.5) * h).toFixed(1) + 'px)';
     });
-  }
-  function openZone(idx) {
-    var l = zones[idx].link;
-    if (l.indexOf('http') === 0) window.open(l, '_blank'); else window.location.href = l;
   }
 
   renderer.domElement.addEventListener('mousemove', function (e) {
