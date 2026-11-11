@@ -3,7 +3,7 @@
 /* --- 3D Chip container --- */
 #chip-3d {
   width: 100%;
-  height: 360px;
+  height: 430px;
   cursor: crosshair;
   margin: 24px 0 0;
   position: relative;
@@ -20,7 +20,12 @@
   0%, 100% { border-color: rgba(0,255,65,0.08); box-shadow: 0 0 0 transparent; }
   50%       { border-color: rgba(0,255,65,0.28); box-shadow: 0 0 18px rgba(0,255,65,0.12); }
 }
-#chip-3d canvas { display: block; }
+#chip-3d canvas {
+  display: block;
+  /* the module floats above the page: a deep soft shadow plus a faint green spill */
+  filter: drop-shadow(0 26px 30px rgba(0, 0, 0, 0.8)) drop-shadow(0 0 28px rgba(0, 255, 65, 0.06));
+}
+@media (max-width: 600px) { #chip-3d { height: 320px; } }
 
 /* Click-to-explore hint badge */
 #chip-hint {
